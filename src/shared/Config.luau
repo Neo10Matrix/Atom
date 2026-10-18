@@ -28,6 +28,10 @@ Config.WALK_SPEED = 20
 -- 예) 4:4 → 각 1개, 8:8 → 각 2개
 Config.PLAYERS_PER_BALL = 4
 
+-- 한 사람은 공 두 개를 동시에 다룰 수 없다:
+-- 축구공을 드리블(몸에 닿음)·킥하면 이 시간 동안 헤딩 불가, 셔틀콕을 헤딩하면 이 시간 동안 킥 불가
+Config.CONTROL_LOCK_TIME = 1.5
+
 -- 축구공 (일반 크기, 발로만)
 Config.BALL_DIAMETER = 4
 Config.KICK_RANGE = 10 -- 캐릭터 중심 ~ 공 중심 거리

@@ -34,6 +34,12 @@ local function kickBlockReason(): string?
 	if net:GetAttribute("Phase") ~= "Playing" then
 		return "킥오프 전에는 찰 수 없어요"
 	end
+	if
+		player:GetAttribute("Control") == "Shuttle"
+		and (player:GetAttribute("ControlUntil") or 0) > workspace:GetServerTimeNow()
+	then
+		return "헤딩 직후에는 축구공을 찰 수 없어요"
+	end
 	local _, root = aliveCharacter()
 	local field = workspace:FindFirstChild("ArmySoccerField")
 	local balls = field and field:FindFirstChild("Balls")

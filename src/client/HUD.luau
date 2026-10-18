@@ -1,6 +1,7 @@
 -- 화면 UI: 점수판, 타이머, 안내 메시지, 킥 파워 게이지, 조작 안내
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
@@ -110,6 +111,28 @@ function HUD.init()
 		Parent = gui,
 	})
 
+	-- 지금 다루는 공 (한 사람은 공 두 개를 동시에 다룰 수 없다)
+	local controlLabel = label({
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -160),
+		Size = UDim2.new(0, 360, 0, 22),
+		TextStrokeTransparency = 0.4,
+		Visible = false,
+		Parent = gui,
+	})
+	RunService.Heartbeat:Connect(function()
+		local remaining = (player:GetAttribute("ControlUntil") or 0) - workspace:GetServerTimeNow()
+		local kind = player:GetAttribute("Control")
+		controlLabel.Visible = remaining > 0
+		if kind == "Soccer" then
+			controlLabel.Text = string.format("⚽ 드리블 중 — 헤딩 불가 (%.1f초)", remaining)
+			controlLabel.TextColor3 = Color3.fromRGB(200, 230, 255)
+		else
+			controlLabel.Text = string.format("🏸 헤딩 중 — 킥 불가 (%.1f초)", remaining)
+			controlLabel.TextColor3 = Color3.fromRGB(255, 230, 150)
+		end
+	end)
+
 	-- 킥 파워 게이지
 	chargeFrame = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -151,7 +174,7 @@ function HUD.init()
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n땅에 떨어지면 실점  |  Q: 돌격",
+		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n공은 한 번에 하나만!  |  Q: 돌격",
 		Parent = panel,
 	})
 

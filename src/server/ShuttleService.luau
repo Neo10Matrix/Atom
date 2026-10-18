@@ -1,5 +1,5 @@
 -- 거대 배드민턴 셔틀콕(여러 개) + 가운데 반투명 네트
--- * 셔틀콕은 헤딩(머리·상체)으로만 친다.
+-- * 셔틀콕은 헤딩(머리·상체)으로만 친다. 축구공을 드리블 중인 사람은 헤딩할 수 없다.
 -- * 같은 팀은 최대 3번까지 헤딩할 수 있고 그 안에 네트를 넘겨야 한다.
 --   3번째 헤딩에서 셔틀콕이 빨간색으로 바뀌고, 4번째 터치는 반칙(상대 득점).
 -- * 땅에 떨어지면 떨어진 진영의 팀이 실점한다.
@@ -110,6 +110,10 @@ local function onTouched(s: Shuttle, hit: BasePart)
 	local now = os.clock()
 	local last = s.lastHeaderTime[player]
 	if last and now - last < Config.HEADER_COOLDOWN then
+		return
+	end
+	-- 축구공을 다루는 중이면 헤딩 불가 (셔틀콕은 그냥 몸에 튕긴다)
+	if not PlayerService.markControl(player, "Shuttle") then
 		return
 	end
 	s.lastHeaderTime[player] = now

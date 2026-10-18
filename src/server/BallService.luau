@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local CollisionGroups = require(script.Parent.CollisionGroups)
+local PlayerService = require(script.Parent.PlayerService)
 
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
@@ -55,7 +56,8 @@ local function makeBall(): Part
 	ball.Touched:Connect(function(hit)
 		local model = hit:FindFirstAncestorOfClass("Model")
 		local player = model and Players:GetPlayerFromCharacter(model)
-		if player then
+		-- 몸에 닿으면 드리블 중으로 기록 (헤딩 직후라면 드리블로 치지 않음)
+		if player and PlayerService.markControl(player, "Soccer") then
 			lastToucher[ball] = player
 		end
 	end)
@@ -78,7 +80,7 @@ local function onKick(player: Player, power: unknown)
 		return
 	end
 	local root = aliveRoot(player)
-	if not root then
+	if not root or not PlayerService.canControl(player, "Soccer") then
 		return
 	end
 	local look = root.CFrame.LookVector
@@ -102,6 +104,7 @@ local function onKick(player: Player, power: unknown)
 		return
 	end
 	lastKick[player] = now
+	PlayerService.markControl(player, "Soccer")
 
 	local alpha = math.clamp(power :: number, 0, 1)
 	local speed = Config.KICK_MIN_SPEED + (Config.KICK_MAX_SPEED - Config.KICK_MIN_SPEED) * alpha

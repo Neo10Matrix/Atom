@@ -12,6 +12,8 @@ local PlayerService = {}
 PlayerService.teams = {} :: { [string]: Team }
 
 local frozen = false
+-- 마지막으로 다룬 공 종류("Soccer" / "Shuttle")와 시각
+local control: { [Player]: { kind: string, time: number } } = {}
 
 local function teamKeyOf(player: Player): string?
 	return player.Team and player.Team:GetAttribute("Key")
@@ -134,6 +136,9 @@ function PlayerService.init()
 	end
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
+	Players.PlayerRemoving:Connect(function(player)
+		control[player] = nil
+	end)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
@@ -162,6 +167,23 @@ function PlayerService.positionPlayers()
 			end
 		end
 	end
+end
+
+-- 공 두 개 동시 컨트롤 금지: 다른 종류의 공을 다룬 지 CONTROL_LOCK_TIME 이 지나야 이 공을 다룰 수 있다
+function PlayerService.canControl(player: Player, kind: string): boolean
+	local last = control[player]
+	return not last or last.kind == kind or os.clock() - last.time > Config.CONTROL_LOCK_TIME
+end
+
+-- 공을 다뤘다고 기록한다. 다른 공을 다루는 중이라 막히면 false
+function PlayerService.markControl(player: Player, kind: string): boolean
+	if not PlayerService.canControl(player, kind) then
+		return false
+	end
+	control[player] = { kind = kind, time = os.clock() }
+	player:SetAttribute("Control", kind)
+	player:SetAttribute("ControlUntil", workspace:GetServerTimeNow() + Config.CONTROL_LOCK_TIME)
+	return true
 end
 
 function PlayerService.setFrozen(value: boolean)
