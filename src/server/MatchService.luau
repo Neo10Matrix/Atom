@@ -47,7 +47,11 @@ local function ballCount(): number
 end
 
 local function kickoff()
-	BotService.fill()
+	-- 봇 생성이 실패해도 경기는 진행한다
+	local botsOk, botError = pcall(BotService.fill)
+	if not botsOk then
+		warn("[아미사커] 봇 생성 오류:", botError)
+	end
 	local count = ballCount()
 	BallService.reset(count)
 	ShuttleService.reset(count)
@@ -161,7 +165,13 @@ function MatchService.run(netFolder: Folder)
 		while #Players:GetPlayers() < minPlayers do
 			task.wait(1)
 		end
-		playMatch()
+		-- 경기 중 오류가 나도 서버 루프가 멈추지 않도록: 오류를 알리고 새 경기를 시작한다
+		local ok, err = pcall(playMatch)
+		if not ok then
+			warn("[아미사커] 경기 진행 오류:", err)
+			announce("오류 발생! 출력(Output) 창을 확인하세요", 5)
+			task.wait(5)
+		end
 	end
 end
 
