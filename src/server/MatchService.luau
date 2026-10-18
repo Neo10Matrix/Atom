@@ -166,11 +166,13 @@ function MatchService.run(netFolder: Folder)
 			task.wait(1)
 		end
 		-- 경기 중 오류가 나도 서버 루프가 멈추지 않도록: 오류를 알리고 새 경기를 시작한다
-		local ok, err = pcall(playMatch)
+		local ok, err = xpcall(playMatch, debug.traceback)
 		if not ok then
 			warn("[아미사커] 경기 진행 오류:", err)
-			announce("오류 발생! 출력(Output) 창을 확인하세요", 5)
-			task.wait(5)
+			-- 출력 창을 못 찾아도 원인을 알 수 있게 첫 줄(파일:줄 번호: 내용)을 화면에도 띄운다
+			local firstLine = string.match(tostring(err), "^[^\n]*") or tostring(err)
+			announce("오류: " .. firstLine, 15)
+			task.wait(15)
 		end
 	end
 end
