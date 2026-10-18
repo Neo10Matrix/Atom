@@ -15,9 +15,9 @@ Config.END_SCREEN = 8
 Config.FIELD_LENGTH = 220
 Config.FIELD_WIDTH = 140
 Config.WALL_HEIGHT = 110 -- 투명 벽/천장 높이
-Config.GOAL_WIDTH = 48 -- 거대 축구공이 들어가도록 크게
-Config.GOAL_HEIGHT = 20
-Config.GOAL_DEPTH = 14
+Config.GOAL_WIDTH = 32
+Config.GOAL_HEIGHT = 12
+Config.GOAL_DEPTH = 8
 Config.PENALTY_BOX_DEPTH = 30 -- 페널티 박스 라인 (표시용)
 Config.PENALTY_BOX_WIDTH = 80
 
@@ -28,9 +28,9 @@ Config.WALK_SPEED = 20
 -- 예) 4:4 → 각 1개, 8:8 → 각 2개
 Config.PLAYERS_PER_BALL = 4
 
--- 거대 축구공 (발로만)
-Config.BALL_DIAMETER = 12
-Config.KICK_RANGE = 13 -- 캐릭터 중심 ~ 공 중심 거리
+-- 축구공 (일반 크기, 발로만)
+Config.BALL_DIAMETER = 4
+Config.KICK_RANGE = 10 -- 캐릭터 중심 ~ 공 중심 거리
 Config.KICK_COOLDOWN = 0.35
 Config.KICK_MIN_SPEED = 35
 Config.KICK_MAX_SPEED = 110
@@ -39,7 +39,7 @@ Config.KICK_MAX_LIFT = 0.5
 Config.MAX_CHARGE_TIME = 1
 
 -- 거대 셔틀콕 (배드민턴, 헤딩으로만)
-Config.SHUTTLE_DIAMETER = 8
+Config.SHUTTLE_DIAMETER = 14 -- 거대 셔틀콕 (코르크 부분 지름)
 Config.SHUTTLE_GRAVITY_SCALE = 0.3 -- 보통 공보다 천천히 떨어짐
 Config.SHUTTLE_DRAG = 0.6 -- 수평 속도 감속 (초당 비율)
 Config.SERVE_HEIGHT = 40 -- 서브 때 셔틀콕이 떨어지기 시작하는 높이
@@ -47,7 +47,7 @@ Config.SERVE_DELAY = 2 -- 득점 후 다음 서브까지 (초)
 Config.HEADER_UP_SPEED = 60
 Config.HEADER_FORWARD_SPEED = 45
 Config.HEADER_COOLDOWN = 0.3
-Config.NET_HEIGHT = 16 -- 가운데 반투명 네트 높이
+Config.NET_HEIGHT = 18 -- 가운데 반투명 네트 높이
 
 -- 돌격 (대시)
 Config.DASH_SPEED = 70

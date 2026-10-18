@@ -1,4 +1,4 @@
--- 거대 축구공: 킥오프 때 인원에 맞춰 놓이는 공들, 킥 처리, 골 판정
+-- 축구공(일반 크기): 킥오프 때 인원에 맞춰 놓이는 공들, 킥 처리, 골 판정
 -- 축구공은 발로만 찬다
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,8 +36,7 @@ local function makeBall(): Part
 	ball.Size = Vector3.one * D
 	ball.Material = Enum.Material.SmoothPlastic
 	ball.Color = Color3.new(1, 1, 1)
-	-- 거대하지만 가볍게: 선수가 몸으로 밀어도 굴러가도록 밀도를 낮춤
-	ball.CustomPhysicalProperties = PhysicalProperties.new(0.03, 0.4, 0.6, 1, 1)
+	ball.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.4, 0.6, 1, 1)
 	ball.CollisionGroup = CollisionGroups.SoccerBall
 
 	local a0 = Instance.new("Attachment")
