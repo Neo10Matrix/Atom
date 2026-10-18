@@ -60,6 +60,10 @@ Config.HEADER_FORWARD_SPEED = 45
 Config.HEADER_COOLDOWN = 0.3
 Config.NET_HEIGHT = 18 -- 가운데 반투명 네트 높이
 
+-- 테스트용 봇: 킥오프 때마다 각 팀을 이 인원까지 봇으로 채운다 (실제 플레이어가 오면 그만큼 빠짐)
+Config.BOTS_ENABLED = true
+Config.BOT_TEAM_SIZE = 4
+
 -- 돌격 (대시)
 Config.DASH_SPEED = 70
 Config.DASH_DURATION = 0.2

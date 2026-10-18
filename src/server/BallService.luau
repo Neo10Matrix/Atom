@@ -25,25 +25,26 @@ local GRAB_MAX_HEIGHT = D / 2 + 2.5
 export type BallEvent = {
 	kind: "goal" | "out",
 	side: number?, -- 공이 들어간 골대 쪽 (-1 / 1)
-	scorer: Player?,
+	scorer: PlayerService.Actor?,
 }
 
-type Possession = { player: Player, since: number }
+type Actor = PlayerService.Actor
+type Possession = { player: Actor, since: number }
 
 local BallService = {}
 
 local folder: Instance
 local balls: { Part } = {}
 local startPosition: { [Part]: Vector3 } = {}
-local lastToucher: { [Part]: Player } = {}
+local lastToucher: { [Part]: Actor } = {}
 local owner: { [Part]: Possession } = {}
 local highlight: { [Part]: Highlight } = {}
-local lastKick: { [Player]: number } = {}
-local regrabAt: { [Player]: number } = {}
+local lastKick: { [Actor]: number } = {}
+local regrabAt: { [Actor]: number } = {}
 local enabled = false
 
-local function aliveRoot(player: Player): BasePart?
-	local character = player.Character
+local function aliveRoot(actor: Actor): BasePart?
+	local character = PlayerService.characterOf(actor)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not root or not humanoid or humanoid.Health <= 0 then
@@ -58,7 +59,7 @@ local function flatLook(root: BasePart): Vector3
 	return if flat.Magnitude > 1e-3 then flat.Unit else Vector3.xAxis
 end
 
-local function ownsAny(player: Player): boolean
+local function ownsAny(player: Actor): boolean
 	for _, possession in owner do
 		if possession.player == player then
 			return true
@@ -79,17 +80,16 @@ local function release(ball: Part)
 	end
 end
 
-local function grab(ball: Part, player: Player)
+local function grab(ball: Part, player: Actor)
 	owner[ball] = { player = player, since = os.clock() }
-	local team = player.Team
-	highlight[ball].OutlineColor = if team then team.TeamColor.Color else Color3.new(1, 1, 1)
+	local key = PlayerService.teamKeyOf(player)
+	highlight[ball].OutlineColor = if key then Config.Teams[key].Color.Color else Color3.new(1, 1, 1)
 	highlight[ball].Enabled = true
 	player:SetAttribute("Dribbling", true)
 end
 
 local function onTouched(ball: Part, hit: BasePart)
-	local model = hit:FindFirstAncestorOfClass("Model")
-	local player = model and Players:GetPlayerFromCharacter(model)
+	local player = PlayerService.actorFromPart(hit)
 	if not player or not PlayerService.canTouchSoccer(player) then
 		return
 	end
@@ -145,7 +145,8 @@ local function makeBall(): Part
 end
 
 -- 킥: 드리블 중인 공이 있으면 그 공을, 없으면 가장 가까운 공을 바라보는 방향으로 찬다
-local function onKick(player: Player, power: unknown)
+-- (플레이어는 원격 이벤트로, 봇은 직접 호출)
+function BallService.kick(player: Actor, power: unknown)
 	if not enabled or typeof(power) ~= "number" or power ~= power then
 		return
 	end
@@ -186,7 +187,7 @@ local function onKick(player: Player, power: unknown)
 end
 
 -- 헤딩하면 호출: 드리블 중이던 축구공을 놓쳐서 앞으로 굴러가고, 잠시 축구공을 못 잡는다
-function BallService.dropFor(player: Player)
+function BallService.dropFor(player: Actor)
 	PlayerService.lockSoccer(player)
 	local root = aliveRoot(player)
 	for _, ball in balls do
@@ -235,7 +236,7 @@ function BallService.init(field: Folder, net: Folder)
 	BallService.reset(1)
 
 	local kick = net:WaitForChild("Kick") :: RemoteEvent
-	kick.OnServerEvent:Connect(onKick)
+	kick.OnServerEvent:Connect(BallService.kick)
 	Players.PlayerRemoving:Connect(function(player)
 		lastKick[player] = nil
 		regrabAt[player] = nil
@@ -277,6 +278,16 @@ function BallService.release()
 		ball:SetNetworkOwner(nil)
 	end
 	enabled = true
+end
+
+-- 봇 AI 용: 현재 축구공 목록과 소유자
+function BallService.getBalls(): { Part }
+	return balls
+end
+
+function BallService.ownerOf(ball: Part): Actor?
+	local possession = owner[ball]
+	return possession and possession.player
 end
 
 -- 매 프레임 호출: 드리블, 골/아웃을 처리하고 발생한 이벤트 목록을 돌려준다

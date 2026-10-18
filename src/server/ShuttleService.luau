@@ -30,7 +30,7 @@ local TOUCH_COLORS = {
 export type ShuttleEvent = {
 	concedingSide: number, -- 실점한 팀의 진영 쪽 (-1 / 1)
 	reason: "ground" | "fault",
-	scorer: Player?, -- 마지막으로 헤딩한 선수
+	scorer: PlayerService.Actor?, -- 마지막으로 헤딩한 선수
 }
 
 type Shuttle = {
@@ -40,8 +40,8 @@ type Shuttle = {
 	enabled: boolean,
 	touchTeam: string?,
 	touchCount: number,
-	lastHeader: Player?,
-	lastHeaderTime: { [Player]: number },
+	lastHeader: PlayerService.Actor?,
+	lastHeaderTime: { [PlayerService.Actor]: number },
 	serveAt: number?,
 	serveSide: number,
 	stillSince: number?,
@@ -94,9 +94,9 @@ local function onTouched(s: Shuttle, hit: BasePart)
 	if not s.enabled then
 		return
 	end
-	local model = hit:FindFirstAncestorOfClass("Model")
-	local player = model and Players:GetPlayerFromCharacter(model)
-	if not model or not player then
+	local player = PlayerService.actorFromPart(hit)
+	local model = player and PlayerService.characterOf(player)
+	if not player or not model then
 		return
 	end
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -260,6 +260,17 @@ function ShuttleService.release()
 	for _, s in shuttles do
 		serve(s)
 	end
+end
+
+-- 봇 AI 용: 경기 중인 셔틀콕 목록 (코르크 파트)
+function ShuttleService.getActive(): { Part }
+	local result = {}
+	for _, s in shuttles do
+		if s.enabled then
+			table.insert(result, s.cork)
+		end
+	end
+	return result
 end
 
 -- 매 프레임 호출: 공기 저항, 네트 넘김, 착지 판정, 다음 서브. 발생한 득점 이벤트를 돌려준다

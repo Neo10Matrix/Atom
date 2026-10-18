@@ -1,4 +1,5 @@
 -- 팀 배정, 헬멧, 리더보드, 킥오프 배치/정지 처리
+-- "선수(Actor)"는 실제 플레이어(Player) 또는 봇(캐릭터 Model)이다. 공 판정은 둘을 똑같이 다룬다.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
@@ -8,29 +9,88 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local DEFAULT_JUMP_HEIGHT = 7.2
 local DEFAULT_JUMP_POWER = 50
 
+-- Player 또는 봇 캐릭터 Model
+export type Actor = Instance
+
 local PlayerService = {}
 PlayerService.teams = {} :: { [string]: Team }
 
 local frozen = false
+local bots: { Model } = {}
 -- 헤딩한 선수는 이 시각(os.clock)까지 축구공을 잡거나 찰 수 없다
-local soccerLockedUntil: { [Player]: number } = {}
+local soccerLockedUntil: { [Actor]: number } = {}
 
-local function teamKeyOf(player: Player): string?
-	return player.Team and player.Team:GetAttribute("Key")
+function PlayerService.isBot(actor: Actor): boolean
+	return actor:IsA("Model")
 end
-PlayerService.teamKeyOf = teamKeyOf
 
-local function smallestTeam(exclude: Player?): Team
+function PlayerService.characterOf(actor: Actor): Model?
+	if actor:IsA("Player") then
+		return actor.Character
+	end
+	return actor :: Model
+end
+
+function PlayerService.teamKeyOf(actor: Actor): string?
+	if actor:IsA("Player") then
+		return actor.Team and actor.Team:GetAttribute("Key")
+	end
+	return actor:GetAttribute("TeamKey")
+end
+
+function PlayerService.nameOf(actor: Actor): string
+	if actor:IsA("Player") then
+		return actor.DisplayName
+	end
+	return actor.Name
+end
+
+-- 공에 닿은 파트로 선수를 찾는다
+function PlayerService.actorFromPart(part: BasePart): Actor?
+	local model = part:FindFirstAncestorOfClass("Model")
+	if not model then
+		return nil
+	end
+	local player = Players:GetPlayerFromCharacter(model)
+	if player then
+		return player
+	end
+	if model:GetAttribute("IsBot") then
+		return model
+	end
+	return nil
+end
+
+-- 팀의 모든 선수 (플레이어 + 봇)
+function PlayerService.membersOf(key: string): { Actor }
+	local members: { Actor } = {}
+	for _, player in PlayerService.teams[key]:GetPlayers() do
+		table.insert(members, player)
+	end
+	for _, bot in bots do
+		if bot:GetAttribute("TeamKey") == key then
+			table.insert(members, bot)
+		end
+	end
+	return members
+end
+
+local function allActors(): { Actor }
+	local actors: { Actor } = {}
+	for _, key in Config.TEAM_ORDER do
+		for _, actor in PlayerService.membersOf(key) do
+			table.insert(actors, actor)
+		end
+	end
+	return actors
+end
+
+local function smallestTeam(): Team
 	local best: Team? = nil
 	local bestCount = math.huge
 	for _, key in Config.TEAM_ORDER do
 		local team = PlayerService.teams[key]
-		local count = 0
-		for _, p in team:GetPlayers() do
-			if p ~= exclude then
-				count += 1
-			end
-		end
+		local count = #team:GetPlayers()
 		if count < bestCount then
 			best, bestCount = team, count
 		end
@@ -50,7 +110,7 @@ local function applyMovement(humanoid: Humanoid)
 	end
 end
 
-local function addHelmet(character: Model, team: Team?)
+local function addHelmet(character: Model, key: string?)
 	local head = character:WaitForChild("Head", 5) :: BasePart?
 	if not head then
 		return
@@ -64,7 +124,7 @@ local function addHelmet(character: Model, team: Team?)
 	helmet.CanTouch = false
 	helmet.Massless = true
 	helmet.Material = Enum.Material.Fabric
-	helmet.BrickColor = team and team.TeamColor or BrickColor.new("Earth green")
+	helmet.BrickColor = if key then Config.Teams[key].Color else BrickColor.new("Earth green")
 	local mesh = Instance.new("SpecialMesh")
 	mesh.MeshType = Enum.MeshType.Sphere
 	mesh.Scale = Vector3.new(width, head.Size.Y * 0.75, width)
@@ -75,6 +135,19 @@ local function addHelmet(character: Model, team: Team?)
 	weld.Part1 = helmet
 	weld.Parent = helmet
 	helmet.Parent = character
+end
+
+-- 군대 복장 통일: 헬멧을 가리는 모자·머리카락 액세서리를 벗기고 팀 색 헬멧을 씌운다
+local function dressUp(character: Model, key: string?)
+	for _, child in character:GetChildren() do
+		if
+			child:IsA("Accessory")
+			and (child.AccessoryType == Enum.AccessoryType.Hat or child.AccessoryType == Enum.AccessoryType.Hair)
+		then
+			child:Destroy()
+		end
+	end
+	addHelmet(character, key)
 end
 
 local function onCharacter(player: Player, character: Model)
@@ -91,17 +164,7 @@ local function onCharacter(player: Player, character: Model)
 	if player.Character ~= character or not character.Parent then
 		return
 	end
-
-	-- 군대 복장 통일: 헬멧을 가리는 모자·머리카락 액세서리를 벗긴다
-	for _, child in character:GetChildren() do
-		if
-			child:IsA("Accessory")
-			and (child.AccessoryType == Enum.AccessoryType.Hat or child.AccessoryType == Enum.AccessoryType.Hair)
-		then
-			child:Destroy()
-		end
-	end
-	addHelmet(character, player.Team)
+	dressUp(character, PlayerService.teamKeyOf(player))
 end
 
 local function onPlayerAdded(player: Player)
@@ -123,7 +186,6 @@ local function onPlayerAdded(player: Player)
 end
 
 function PlayerService.init()
-
 	for _, key in Config.TEAM_ORDER do
 		local info = Config.Teams[key]
 		local team = Instance.new("Team")
@@ -144,8 +206,38 @@ function PlayerService.init()
 	end
 end
 
-function PlayerService.addPoint(player: Player)
-	local leaderstats = player:FindFirstChild("leaderstats")
+-- 봇 등록: 팀 지정, 이동 속도, 헬멧
+function PlayerService.registerBot(bot: Model, key: string)
+	bot:SetAttribute("IsBot", true)
+	bot:SetAttribute("TeamKey", key)
+	table.insert(bots, bot)
+	local humanoid = bot:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		applyMovement(humanoid)
+	end
+	dressUp(bot, key)
+end
+
+function PlayerService.unregisterBot(bot: Model)
+	local index = table.find(bots, bot)
+	if index then
+		table.remove(bots, index)
+	end
+	soccerLockedUntil[bot] = nil
+end
+
+function PlayerService.botsOf(key: string): { Model }
+	local result = {}
+	for _, bot in bots do
+		if bot:GetAttribute("TeamKey") == key then
+			table.insert(result, bot)
+		end
+	end
+	return result
+end
+
+function PlayerService.addPoint(actor: Actor)
+	local leaderstats = actor:IsA("Player") and actor:FindFirstChild("leaderstats")
 	local goals = leaderstats and leaderstats:FindFirstChild("득점") :: IntValue?
 	if goals then
 		goals.Value += 1
@@ -156,10 +248,10 @@ end
 function PlayerService.positionPlayers()
 	for _, key in Config.TEAM_ORDER do
 		local side = Config.Teams[key].Side
-		local members = PlayerService.teams[key]:GetPlayers()
+		local members = PlayerService.membersOf(key)
 		local spacing = math.min(16, (Config.FIELD_WIDTH - 20) / math.max(#members, 1))
-		for i, player in members do
-			local character = player.Character
+		for i, actor in members do
+			local character = PlayerService.characterOf(actor)
 			if character and character:FindFirstChild("HumanoidRootPart") then
 				local z = (i - (#members + 1) / 2) * spacing
 				local position = Vector3.new(side * Config.FIELD_LENGTH / 4, 4, z)
@@ -170,20 +262,25 @@ function PlayerService.positionPlayers()
 end
 
 -- 한 사람은 공 두 개를 동시에 다룰 수 없다: 헤딩하면 CONTROL_LOCK_TIME 동안 축구공을 못 잡는다
-function PlayerService.lockSoccer(player: Player)
-	soccerLockedUntil[player] = os.clock() + Config.CONTROL_LOCK_TIME
-	player:SetAttribute("SoccerLockUntil", workspace:GetServerTimeNow() + Config.CONTROL_LOCK_TIME)
+function PlayerService.lockSoccer(actor: Actor)
+	soccerLockedUntil[actor] = os.clock() + Config.CONTROL_LOCK_TIME
+	actor:SetAttribute("SoccerLockUntil", workspace:GetServerTimeNow() + Config.CONTROL_LOCK_TIME)
 end
 
-function PlayerService.canTouchSoccer(player: Player): boolean
-	local untilTime = soccerLockedUntil[player]
+function PlayerService.canTouchSoccer(actor: Actor): boolean
+	local untilTime = soccerLockedUntil[actor]
 	return not untilTime or os.clock() >= untilTime
+end
+
+function PlayerService.isFrozen(): boolean
+	return frozen
 end
 
 function PlayerService.setFrozen(value: boolean)
 	frozen = value
-	for _, player in Players:GetPlayers() do
-		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	for _, actor in allActors() do
+		local character = PlayerService.characterOf(actor)
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			applyMovement(humanoid)
 		end

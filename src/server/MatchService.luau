@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
+local BotService = require(script.Parent.BotService)
 local PlayerService = require(script.Parent.PlayerService)
 local ShuttleService = require(script.Parent.ShuttleService)
 
@@ -39,13 +40,14 @@ end
 -- 팀당 PLAYERS_PER_BALL 명마다 축구공·셔틀콕 1개씩 (최소 1개)
 local function ballCount(): number
 	local largest = 0
-	for _, team in PlayerService.teams do
-		largest = math.max(largest, #team:GetPlayers())
+	for _, key in Config.TEAM_ORDER do
+		largest = math.max(largest, #PlayerService.membersOf(key))
 	end
 	return math.max(1, largest // Config.PLAYERS_PER_BALL)
 end
 
 local function kickoff()
+	BotService.fill()
 	local count = ballCount()
 	BallService.reset(count)
 	ShuttleService.reset(count)
@@ -74,9 +76,9 @@ local function handleGoal(event: BallService.BallEvent)
 	local text
 	if scorer and scorer.Parent and PlayerService.teamKeyOf(scorer) == scoringKey then
 		PlayerService.addPoint(scorer)
-		text = string.format("골! %s — %s", teamName, scorer.DisplayName)
+		text = string.format("골! %s — %s", teamName, PlayerService.nameOf(scorer))
 	elseif scorer and scorer.Parent then
-		text = string.format("자책골! %s 득점 (%s)", teamName, scorer.DisplayName)
+		text = string.format("자책골! %s 득점 (%s)", teamName, PlayerService.nameOf(scorer))
 	else
 		text = string.format("골! %s", teamName)
 	end
