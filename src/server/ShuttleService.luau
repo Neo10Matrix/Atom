@@ -1,5 +1,5 @@
--- 거대 배드민턴 셔틀콕 + 가운데 반투명 네트
--- * 배드민턴 선수만 건드릴 수 있고, 헤딩(머리·상체)으로만 친다.
+-- 거대 배드민턴 셔틀콕(여러 개) + 가운데 반투명 네트
+-- * 셔틀콕은 헤딩(머리·상체)으로만 친다.
 -- * 같은 팀은 최대 3번까지 헤딩할 수 있고 그 안에 네트를 넘겨야 한다.
 --   3번째 헤딩에서 셔틀콕이 빨간색으로 바뀌고, 4번째 터치는 반칙(상대 득점).
 -- * 땅에 떨어지면 떨어진 진영의 팀이 실점한다.
@@ -29,36 +29,42 @@ local TOUCH_COLORS = {
 export type ShuttleEvent = {
 	concedingSide: number, -- 실점한 팀의 진영 쪽 (-1 / 1)
 	reason: "ground" | "fault",
-	scorer: Player?, -- 득점한 팀에서 마지막으로 헤딩한 선수
+	scorer: Player?, -- 마지막으로 헤딩한 선수
+}
+
+type Shuttle = {
+	cork: Part,
+	skirt: Part,
+	lane: number, -- 서브 위치의 Z 좌표
+	enabled: boolean,
+	touchTeam: string?,
+	touchCount: number,
+	lastHeader: Player?,
+	lastHeaderTime: { [Player]: number },
+	serveAt: number?,
+	serveSide: number,
+	stillSince: number?,
 }
 
 local ShuttleService = {}
 
-local cork: Part
-local skirt: Part
-local enabled = false
-local touchTeam: string? = nil
-local touchCount = 0
-local lastHeader: Player? = nil
-local lastHeaderTime: { [Player]: number } = {}
+local field: Folder
+local shuttles: { Shuttle } = {}
 local pending: { ShuttleEvent } = {}
-local serveAt: number? = nil
-local serveSide = 1
-local stillSince: number? = nil
 
 local function sideOf(x: number): number
 	return if x < 0 then -1 else 1
 end
 
-local function setTouches(team: string?, count: number)
-	touchTeam, touchCount = team, count
+local function setTouches(s: Shuttle, team: string?, count: number)
+	s.touchTeam, s.touchCount = team, count
 	local color = TOUCH_COLORS[math.min(count, MAX_TOUCHES)]
-	cork.Color = color
-	skirt.Color = color
-	cork.Material = if count >= MAX_TOUCHES then Enum.Material.Neon else Enum.Material.SmoothPlastic
+	s.cork.Color = color
+	s.skirt.Color = color
+	s.cork.Material = if count >= MAX_TOUCHES then Enum.Material.Neon else Enum.Material.SmoothPlastic
 end
 
-local function buildNet(field: Folder)
+local function buildNet()
 	local net = Instance.new("Model")
 	net.Name = "BadmintonNet"
 	local function piece(name: string, size: Vector3, position: Vector3, color: Color3, transparency: number)
@@ -83,13 +89,13 @@ local function buildNet(field: Folder)
 	net.Parent = field
 end
 
-local function onTouched(hit: BasePart)
-	if not enabled then
+local function onTouched(s: Shuttle, hit: BasePart)
+	if not s.enabled then
 		return
 	end
 	local model = hit:FindFirstAncestorOfClass("Model")
 	local player = model and Players:GetPlayerFromCharacter(model)
-	if not player or PlayerService.sportOf(player) ~= "Badminton" then
+	if not model or not player then
 		return
 	end
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -102,43 +108,41 @@ local function onTouched(hit: BasePart)
 		return
 	end
 	local now = os.clock()
-	if lastHeaderTime[player] and now - lastHeaderTime[player] < Config.HEADER_COOLDOWN then
+	local last = s.lastHeaderTime[player]
+	if last and now - last < Config.HEADER_COOLDOWN then
 		return
 	end
-	lastHeaderTime[player] = now
+	s.lastHeaderTime[player] = now
 
-	local count = if touchTeam == key then touchCount + 1 else 1
+	local count = if s.touchTeam == key then s.touchCount + 1 else 1
 	if count > MAX_TOUCHES then
 		-- 4번째 터치: 반칙
-		enabled = false
-		table.insert(pending, {
-			concedingSide = Config.Teams[key].Side,
-			reason = "fault",
-			scorer = nil,
-		})
+		s.enabled = false
+		table.insert(pending, { concedingSide = Config.Teams[key].Side, reason = "fault", scorer = nil })
+		s.serveSide = -Config.Teams[key].Side
+		s.serveAt = now + Config.SERVE_DELAY
 		return
 	end
-	setTouches(key, count)
-	lastHeader = player
+	setTouches(s, key, count)
+	s.lastHeader = player
 
 	local look = root.CFrame.LookVector
 	local flat = Vector3.new(look.X, 0, look.Z)
 	flat = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.zero
-	cork.AssemblyLinearVelocity = flat * Config.HEADER_FORWARD_SPEED + Vector3.new(0, Config.HEADER_UP_SPEED, 0)
+	s.cork.AssemblyLinearVelocity = flat * Config.HEADER_FORWARD_SPEED + Vector3.new(0, Config.HEADER_UP_SPEED, 0)
 end
 
-local function makeShuttle(field: Folder)
-	cork = Instance.new("Part")
+local function makeShuttle(): Shuttle
+	local cork = Instance.new("Part")
 	cork.Name = "Shuttle"
 	cork.Shape = Enum.PartType.Ball
 	cork.Size = Vector3.one * SD
 	cork.CustomPhysicalProperties = PhysicalProperties.new(0.1, 0.5, 0.3, 1, 1)
 	cork.CollisionGroup = CollisionGroups.Shuttle
 	cork.Anchored = true
-	cork.Position = Vector3.new(SERVE_X, Config.SERVE_HEIGHT, 0)
 
 	-- 깃털(치마) 부분: 보이기만 하고 충돌하지 않는다
-	skirt = Instance.new("Part")
+	local skirt = Instance.new("Part")
 	skirt.Name = "Feathers"
 	skirt.Shape = Enum.PartType.Cylinder
 	skirt.Size = Vector3.new(SD * 1.1, SD * 1.4, SD * 1.4)
@@ -172,100 +176,126 @@ local function makeShuttle(field: Folder)
 	lift.ApplyAtCenterOfMass = true
 	lift.Parent = cork
 
-	cork.Touched:Connect(onTouched)
 	cork.Parent = field
 	lift.Force = Vector3.new(0, cork.AssemblyMass * workspace.Gravity * (1 - Config.SHUTTLE_GRAVITY_SCALE), 0)
-	setTouches(nil, 0)
+
+	local s: Shuttle = {
+		cork = cork,
+		skirt = skirt,
+		lane = 0,
+		enabled = false,
+		touchTeam = nil,
+		touchCount = 0,
+		lastHeader = nil,
+		lastHeaderTime = {},
+		serveAt = nil,
+		serveSide = if math.random() < 0.5 then -1 else 1,
+		stillSince = nil,
+	}
+	cork.Touched:Connect(function(hit)
+		onTouched(s, hit)
+	end)
+	setTouches(s, nil, 0)
+	return s
 end
 
-local function placeForServe(side: number)
-	cork.Anchored = true
-	cork.CFrame = CFrame.new(side * SERVE_X, Config.SERVE_HEIGHT, 0)
-	cork.AssemblyLinearVelocity = Vector3.zero
-	cork.AssemblyAngularVelocity = Vector3.zero
-	setTouches(nil, 0)
-	lastHeader = nil
-	stillSince = nil
+local function placeForServe(s: Shuttle)
+	s.cork.Anchored = true
+	s.cork.CFrame = CFrame.new(s.serveSide * SERVE_X, Config.SERVE_HEIGHT, s.lane)
+	s.cork.AssemblyLinearVelocity = Vector3.zero
+	s.cork.AssemblyAngularVelocity = Vector3.zero
+	setTouches(s, nil, 0)
+	s.lastHeader = nil
+	s.stillSince = nil
 end
 
-local function serve()
-	serveAt = nil
-	cork.Anchored = false
-	cork:SetNetworkOwner(nil)
-	enabled = true
+local function serve(s: Shuttle)
+	placeForServe(s)
+	s.serveAt = nil
+	s.cork.Anchored = false
+	s.cork:SetNetworkOwner(nil)
+	s.enabled = true
 end
 
-local function landed(concedingSide: number)
-	enabled = false
-	table.insert(pending, {
-		concedingSide = concedingSide,
-		reason = "ground",
-		scorer = lastHeader,
-	})
+local function landed(s: Shuttle, concedingSide: number, now: number)
+	s.enabled = false
+	table.insert(pending, { concedingSide = concedingSide, reason = "ground", scorer = s.lastHeader })
+	-- 득점한 팀 쪽에서 다음 서브
+	s.serveSide = -concedingSide
+	s.serveAt = now + Config.SERVE_DELAY
 end
 
-function ShuttleService.init(field: Folder)
-	buildNet(field)
-	makeShuttle(field)
+function ShuttleService.init(fieldFolder: Folder)
+	field = fieldFolder
+	buildNet()
 	Players.PlayerRemoving:Connect(function(player)
-		lastHeaderTime[player] = nil
+		for _, s in shuttles do
+			s.lastHeaderTime[player] = nil
+		end
 	end)
 end
 
--- 킥오프 준비: 셔틀콕을 서브 위치에 고정
-function ShuttleService.reset()
-	enabled = false
-	serveAt = nil
+-- 킥오프 준비: 셔틀콕을 count 개로 맞추고 서브 위치에 고정
+function ShuttleService.reset(count: number)
 	pending = {}
-	placeForServe(serveSide)
+	while #shuttles < count do
+		table.insert(shuttles, makeShuttle())
+	end
+	while #shuttles > count do
+		local s = table.remove(shuttles) :: Shuttle
+		s.cork:Destroy()
+	end
+	for i, s in shuttles do
+		s.enabled = false
+		s.serveAt = nil
+		s.lane = (i - (count + 1) / 2) * (W / (count + 1))
+		placeForServe(s)
+	end
 end
 
 function ShuttleService.release()
-	serve()
+	for _, s in shuttles do
+		serve(s)
+	end
 end
 
--- 매 프레임 호출: 공기 저항, 네트 넘김, 착지/반칙 판정, 다음 서브. 발생한 득점 이벤트를 돌려준다
+-- 매 프레임 호출: 공기 저항, 네트 넘김, 착지 판정, 다음 서브. 발생한 득점 이벤트를 돌려준다
 function ShuttleService.step(dt: number): { ShuttleEvent }
 	local now = os.clock()
+	for _, s in shuttles do
+		if s.serveAt then
+			if now >= s.serveAt then
+				serve(s)
+			end
+		elseif s.enabled then
+			local p = s.cork.Position
+			local v = s.cork.AssemblyLinearVelocity
+			local damping = math.max(0, 1 - Config.SHUTTLE_DRAG * dt)
+			s.cork.AssemblyLinearVelocity = Vector3.new(v.X * damping, v.Y, v.Z * damping)
 
-	if serveAt then
-		if now >= serveAt then
-			serve()
-		end
-	elseif enabled then
-		local p = cork.Position
-		local v = cork.AssemblyLinearVelocity
-		local damping = math.max(0, 1 - Config.SHUTTLE_DRAG * dt)
-		cork.AssemblyLinearVelocity = Vector3.new(v.X * damping, v.Y, v.Z * damping)
+			-- 상대 진영으로 넘어가면 헤딩 횟수 초기화
+			if s.touchTeam and sideOf(p.X) == -Config.Teams[s.touchTeam].Side then
+				setTouches(s, nil, 0)
+			end
 
-		-- 상대 진영으로 넘어가면 헤딩 횟수 초기화
-		if touchTeam and sideOf(p.X) == -Config.Teams[touchTeam].Side then
-			setTouches(nil, 0)
-		end
+			if v.Magnitude < 0.5 then
+				s.stillSince = s.stillSince or now
+			else
+				s.stillSince = nil
+			end
 
-		if v.Magnitude < 0.5 then
-			stillSince = stillSince or now
-		else
-			stillSince = nil
-		end
-
-		if math.abs(p.X) > L / 2 + 5 or math.abs(p.Z) > W / 2 + 5 or p.Y > Config.WALL_HEIGHT + 5 or p.Y < -20 then
-			-- 경기장 밖: 점수 없이 같은 쪽에서 다시 서브
-			placeForServe(sideOf(p.X))
-			serveAt = now + Config.SERVE_DELAY
-		elseif p.Y <= SD / 2 + 0.6 or (stillSince and now - stillSince > STUCK_TIME) then
-			landed(sideOf(p.X))
+			if math.abs(p.X) > L / 2 + 5 or math.abs(p.Z) > W / 2 + 5 or p.Y > Config.WALL_HEIGHT + 5 or p.Y < -20 then
+				-- 경기장 밖: 점수 없이 다시 서브
+				s.enabled = false
+				s.serveAt = now + Config.SERVE_DELAY
+			elseif p.Y <= SD / 2 + 0.6 or (s.stillSince and now - s.stillSince > STUCK_TIME) then
+				landed(s, sideOf(p.X), now)
+			end
 		end
 	end
 
-	-- 득점이 나면 득점한 팀 쪽에서 다음 서브
 	local events = pending
 	pending = {}
-	for _, event in events do
-		serveSide = -event.concedingSide
-		placeForServe(serveSide)
-		serveAt = now + Config.SERVE_DELAY
-	end
 	return events
 end
 

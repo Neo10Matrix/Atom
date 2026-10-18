@@ -1,11 +1,10 @@
--- 거대 축구공: 킥오프 때 놓이는 공 여러 개, 킥 처리, 골 판정
--- 축구 선수만 건드릴 수 있고(충돌 그룹), 발로만 찬다
+-- 거대 축구공: 킥오프 때 인원에 맞춰 놓이는 공들, 킥 처리, 골 판정
+-- 축구공은 발로만 찬다
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local CollisionGroups = require(script.Parent.CollisionGroups)
-local PlayerService = require(script.Parent.PlayerService)
 
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
@@ -23,6 +22,7 @@ export type BallEvent = {
 
 local BallService = {}
 
+local folder: Instance
 local balls: { Part } = {}
 local startPosition: { [Part]: Vector3 } = {}
 local lastToucher: { [Part]: Player } = {}
@@ -56,7 +56,7 @@ local function makeBall(): Part
 	ball.Touched:Connect(function(hit)
 		local model = hit:FindFirstAncestorOfClass("Model")
 		local player = model and Players:GetPlayerFromCharacter(model)
-		if player and PlayerService.sportOf(player) == "Soccer" then
+		if player then
 			lastToucher[ball] = player
 		end
 	end)
@@ -76,9 +76,6 @@ end
 -- 킥 (축구는 발로만): 가장 가까운 공을 캐릭터가 바라보는 방향으로 찬다
 local function onKick(player: Player, power: unknown)
 	if not enabled or typeof(power) ~= "number" or power ~= power then
-		return
-	end
-	if PlayerService.sportOf(player) ~= "Soccer" then
 		return
 	end
 	local root = aliveRoot(player)
@@ -122,15 +119,8 @@ local function placeAtStart(ball: Part)
 end
 
 function BallService.init(field: Folder, net: Folder)
-	local folder = field:WaitForChild("Balls")
-	for i = 1, Config.START_BALLS do
-		local ball = makeBall()
-		local z = (i - (Config.START_BALLS + 1) / 2) * START_SPACING
-		startPosition[ball] = Vector3.new(0, D / 2 + 0.5, z)
-		ball.Parent = folder
-		table.insert(balls, ball)
-	end
-	BallService.reset()
+	folder = field:WaitForChild("Balls")
+	BallService.reset(1)
 
 	local kick = net:WaitForChild("Kick") :: RemoteEvent
 	kick.OnServerEvent:Connect(onKick)
@@ -139,10 +129,23 @@ function BallService.init(field: Folder, net: Folder)
 	end)
 end
 
--- 킥오프 준비: 공들을 시작 자리에 고정하고 킥을 막는다
-function BallService.reset()
+-- 킥오프 준비: 공을 count 개로 맞추고 시작 자리에 고정, 킥을 막는다
+function BallService.reset(count: number)
 	enabled = false
-	for _, ball in balls do
+	while #balls < count do
+		local ball = makeBall()
+		ball.Parent = folder
+		table.insert(balls, ball)
+	end
+	while #balls > count do
+		local ball = table.remove(balls) :: Part
+		startPosition[ball] = nil
+		lastToucher[ball] = nil
+		ball:Destroy()
+	end
+	for i, ball in balls do
+		local z = (i - (count + 1) / 2) * START_SPACING
+		startPosition[ball] = Vector3.new(0, D / 2 + 0.5, z)
 		ball.Anchored = true
 		placeAtStart(ball)
 	end

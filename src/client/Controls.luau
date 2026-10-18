@@ -1,4 +1,4 @@
--- 입력: 킥(차징, 축구 선수만), 돌격 대시
+-- 입력: 킥(차징), 돌격 대시
 -- 배드민턴 헤딩은 키 입력 없이 머리에 셔틀콕이 닿으면 서버가 처리한다
 local ContextActionService = game:GetService("ContextActionService")
 local Debris = game:GetService("Debris")
@@ -31,9 +31,6 @@ end
 
 -- 킥이 안 되는 이유 (없으면 nil). 서버도 같은 조건을 다시 검사한다
 local function kickBlockReason(): string?
-	if (player:GetAttribute("Sport") or Config.DEFAULT_SPORT) ~= "Soccer" then
-		return "축구 선수만 찰 수 있어요 (배드민턴은 헤딩!)"
-	end
 	if net:GetAttribute("Phase") ~= "Playing" then
 		return "킥오프 전에는 찰 수 없어요"
 	end

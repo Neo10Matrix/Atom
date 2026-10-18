@@ -24,17 +24,12 @@ Config.PENALTY_BOX_WIDTH = 80
 -- 이동
 Config.WALK_SPEED = 20
 
--- 종목: 선수는 자기 종목의 공 하나만 건드릴 수 있다 (다른 공은 몸을 통과)
-Config.Sports = {
-	Soccer = { Name = "축구", Description = "거대 축구공을 발로 차서 골대에 넣기" },
-	Badminton = { Name = "배드민턴", Description = "셔틀콕을 헤딩으로 네트 너머로! 땅에 떨어지면 실점" },
-}
-Config.SPORT_ORDER = { "Soccer", "Badminton" }
-Config.DEFAULT_SPORT = "Soccer"
+-- 공 개수: 팀당 이 인원마다 축구공 1개 + 셔틀콕 1개 (최소 1개씩). 킥오프마다 다시 계산
+-- 예) 4:4 → 각 1개, 8:8 → 각 2개
+Config.PLAYERS_PER_BALL = 4
 
 -- 거대 축구공 (발로만)
 Config.BALL_DIAMETER = 12
-Config.START_BALLS = 3 -- 킥오프 때 경기장에 놓이는 축구공 개수
 Config.KICK_RANGE = 13 -- 캐릭터 중심 ~ 공 중심 거리
 Config.KICK_COOLDOWN = 0.35
 Config.KICK_MIN_SPEED = 35

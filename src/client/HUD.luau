@@ -1,4 +1,4 @@
--- 화면 UI: 점수판, 타이머, 안내 메시지, 킥 파워 게이지, 종목 선택
+-- 화면 UI: 점수판, 타이머, 안내 메시지, 킥 파워 게이지, 조작 안내
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -136,60 +136,24 @@ function HUD.init()
 		Parent = gui,
 	})
 
-	-- 종목 선택 + 조작 안내 (선수는 자기 종목의 공 하나만 건드릴 수 있다)
+	-- 조작 안내
 	local panel = make("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 10, 1, -10),
-		Size = UDim2.new(0, 280, 0, 96),
+		Size = UDim2.new(0, 290, 0, 78),
 		BackgroundColor3 = OLIVE,
 		BackgroundTransparency = 0.2,
 		Parent = gui,
 	}, { corner(8) })
-	local sportButtons: { [string]: TextButton } = {}
-	local chooseSport = net:WaitForChild("ChooseSport") :: RemoteEvent
-	for i, key in Config.SPORT_ORDER do
-		local button = make("TextButton", {
-			Position = UDim2.new((i - 1) / #Config.SPORT_ORDER, 6, 0, 6),
-			Size = UDim2.new(1 / #Config.SPORT_ORDER, -12, 0, 28),
-			Text = Config.Sports[key].Name,
-			Font = Enum.Font.GothamBold,
-			TextScaled = true,
-			TextColor3 = Color3.new(1, 1, 1),
-			Parent = panel,
-		}, { corner(6) })
-		button.Activated:Connect(function()
-			chooseSport:FireServer(key)
-		end)
-		sportButtons[key] = button
-	end
-	local sportInfo = label({
-		Position = UDim2.new(0, 8, 0, 40),
-		Size = UDim2.new(1, -16, 0, 16),
-		Font = Enum.Font.Gotham,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = panel,
-	})
-	local controlsInfo = label({
-		Position = UDim2.new(0, 8, 0, 62),
-		Size = UDim2.new(1, -16, 0, 28),
+	label({
+		Position = UDim2.new(0, 8, 0, 6),
+		Size = UDim2.new(1, -16, 1, -12),
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
+		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n땅에 떨어지면 실점  |  Q: 돌격",
 		Parent = panel,
 	})
-
-	local function refreshSport()
-		local current = player:GetAttribute("Sport") or Config.DEFAULT_SPORT
-		for key, button in sportButtons do
-			button.BackgroundColor3 = if key == current then Color3.fromRGB(120, 140, 70) else Color3.fromRGB(70, 75, 55)
-		end
-		sportInfo.Text = Config.Sports[current].Description
-		controlsInfo.Text = if current == "Badminton"
-			then "점프해서 머리로 헤딩 (팀당 3번까지)\n3번째에 빨간색! 꼭 넘기기 | Q: 돌격"
-			else "E 길게 눌렀다 떼기: 킥\nQ: 돌격"
-	end
-	player:GetAttributeChangedSignal("Sport"):Connect(refreshSport)
-	refreshSport()
 
 	local function refreshBoard()
 		alphaLabel.Text = string.format("%s  %d", Config.Teams.Alpha.Name, net:GetAttribute("ScoreAlpha") or 0)

@@ -36,9 +36,19 @@ local function addScore(key: string)
 	net:SetAttribute(attribute, (net:GetAttribute(attribute) or 0) + 1)
 end
 
+-- 팀당 PLAYERS_PER_BALL 명마다 축구공·셔틀콕 1개씩 (최소 1개)
+local function ballCount(): number
+	local largest = 0
+	for _, team in PlayerService.teams do
+		largest = math.max(largest, #team:GetPlayers())
+	end
+	return math.max(1, largest // Config.PLAYERS_PER_BALL)
+end
+
 local function kickoff()
-	BallService.reset()
-	ShuttleService.reset()
+	local count = ballCount()
+	BallService.reset(count)
+	ShuttleService.reset(count)
 	PlayerService.positionPlayers()
 	PlayerService.setFrozen(true)
 	setPhase("Countdown")
@@ -124,8 +134,8 @@ local function playMatch()
 		end
 	end
 
-	BallService.reset()
-	ShuttleService.reset()
+	BallService.reset(ballCount())
+	ShuttleService.reset(ballCount())
 	setPhase("Ended")
 	local alpha = net:GetAttribute("ScoreAlpha") or 0
 	local bravo = net:GetAttribute("ScoreBravo") or 0

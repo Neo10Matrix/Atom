@@ -1,10 +1,9 @@
--- 팀 배정, 종목 선택(축구/배드민턴), 헬멧, 리더보드, 킥오프 배치/정지 처리
+-- 팀 배정, 헬멧, 리더보드, 킥오프 배치/정지 처리
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local CollisionGroups = require(script.Parent.CollisionGroups)
 
 local DEFAULT_JUMP_HEIGHT = 7.2
 local DEFAULT_JUMP_POWER = 50
@@ -35,17 +34,6 @@ local function smallestTeam(exclude: Player?): Team
 		end
 	end
 	return best :: Team
-end
-
-function PlayerService.sportOf(player: Player): string
-	return player:GetAttribute("Sport") or Config.DEFAULT_SPORT
-end
-
-local function applySportGroup(player: Player)
-	local character = player.Character
-	if character then
-		CollisionGroups.applyToCharacter(character, CollisionGroups.Players[PlayerService.sportOf(player)])
-	end
 end
 
 local function applyMovement(humanoid: Humanoid)
@@ -92,7 +80,6 @@ local function onCharacter(player: Player, character: Model)
 	if humanoid then
 		applyMovement(humanoid)
 	end
-	applySportGroup(player)
 
 	-- 아바타 외형이 로드되면서 머리가 교체되면 먼저 붙인 헬멧이 떨어지므로 로드를 기다린다
 	local deadline = os.clock() + 5
@@ -117,7 +104,6 @@ end
 
 local function onPlayerAdded(player: Player)
 	player.Team = smallestTeam()
-	player:SetAttribute("Sport", Config.DEFAULT_SPORT)
 
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
@@ -134,16 +120,7 @@ local function onPlayerAdded(player: Player)
 	end
 end
 
-local function onChooseSport(player: Player, sport: unknown)
-	if typeof(sport) ~= "string" or not Config.Sports[sport] then
-		return
-	end
-	player:SetAttribute("Sport", sport)
-	applySportGroup(player)
-end
-
-function PlayerService.init(net: Folder)
-	CollisionGroups.setup()
+function PlayerService.init()
 
 	for _, key in Config.TEAM_ORDER do
 		local info = Config.Teams[key]
@@ -160,9 +137,6 @@ function PlayerService.init(net: Folder)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
-
-	local chooseSport = net:WaitForChild("ChooseSport") :: RemoteEvent
-	chooseSport.OnServerEvent:Connect(onChooseSport)
 end
 
 function PlayerService.addPoint(player: Player)
@@ -174,30 +148,17 @@ function PlayerService.addPoint(player: Player)
 end
 
 -- 킥오프 대형: 각 팀을 자기 진영에 세로로 정렬
--- 축구 선수는 진영 중간, 배드민턴 선수는 네트 가까이
-local SPORT_LINE_X = {
-	Soccer = Config.FIELD_LENGTH / 4,
-	Badminton = 25,
-}
-
 function PlayerService.positionPlayers()
 	for _, key in Config.TEAM_ORDER do
 		local side = Config.Teams[key].Side
-		for _, sport in Config.SPORT_ORDER do
-			local members = {}
-			for _, player in PlayerService.teams[key]:GetPlayers() do
-				if PlayerService.sportOf(player) == sport then
-					table.insert(members, player)
-				end
-			end
-			local spacing = math.min(16, (Config.FIELD_WIDTH - 20) / math.max(#members, 1))
-			for i, player in members do
-				local character = player.Character
-				if character and character:FindFirstChild("HumanoidRootPart") then
-					local z = (i - (#members + 1) / 2) * spacing
-					local position = Vector3.new(side * SPORT_LINE_X[sport], 4, z)
-					character:PivotTo(CFrame.lookAt(position, Vector3.new(0, 4, z)))
-				end
+		local members = PlayerService.teams[key]:GetPlayers()
+		local spacing = math.min(16, (Config.FIELD_WIDTH - 20) / math.max(#members, 1))
+		for i, player in members do
+			local character = player.Character
+			if character and character:FindFirstChild("HumanoidRootPart") then
+				local z = (i - (#members + 1) / 2) * spacing
+				local position = Vector3.new(side * Config.FIELD_LENGTH / 4, 4, z)
+				character:PivotTo(CFrame.lookAt(position, Vector3.new(0, 4, z)))
 			end
 		end
 	end
