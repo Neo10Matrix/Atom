@@ -245,6 +245,12 @@ function FieldBuilder.build(): Folder
 	if existing then
 		existing:Destroy()
 	end
+	-- Studio Baseplate 템플릿의 기본 바닥·스폰은 경기장 한가운데와 겹치므로 지운다
+	for _, child in workspace:GetChildren() do
+		if child:IsA("SpawnLocation") or (child:IsA("BasePart") and child.Name == "Baseplate") then
+			child:Destroy()
+		end
+	end
 
 	local field = Instance.new("Folder")
 	field.Name = "ArmySoccerField"

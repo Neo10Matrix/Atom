@@ -4,7 +4,6 @@
 --   2. 축구공을 드리블 중이면 상대 골대로 몰고 가서 가까워지면 슛
 --   3. 우리 팀이 갖지 않은 축구공은 가장 가까운 봇이 잡으러 감
 --   4. 나머지는 수비 위치로
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -130,28 +129,51 @@ local function think(bot: Model, index: number)
 	humanoid:MoveTo(Vector3.new(side * L / 4, root.Position.Y, z))
 end
 
+-- 블록으로 만든 단순한 봇 (아바타 파일을 불러오지 않아서 게시 전 Studio 에서도 확실히 생성됨)
+local function buildBot(color: Color3): Model
+	local bot = Instance.new("Model")
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(2, 2, 1)
+	root.Transparency = 1
+	root.CanCollide = false
+	root.Parent = bot
+	bot.PrimaryPart = root
+
+	local function piece(name: string, size: Vector3, offset: Vector3, partColor: Color3, collide: boolean)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Size = size
+		p.Color = partColor
+		p.Material = Enum.Material.SmoothPlastic
+		p.CanCollide = collide
+		p.CFrame = root.CFrame + offset
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = root
+		weld.Part1 = p
+		weld.Parent = p
+		p.Parent = bot
+	end
+	piece("UpperTorso", Vector3.new(2, 2, 1), Vector3.zero, color, true)
+	piece("Head", Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 1.6, 0), Color3.fromRGB(240, 200, 160), true)
+	-- 다리: 공에 닿는 판정(드리블)은 하되 충돌은 하지 않음 (HipHeight 로 서 있음)
+	piece("Legs", Vector3.new(2, 2, 1), Vector3.new(0, -2, 0), Color3.fromRGB(60, 60, 50), false)
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = Enum.HumanoidRigType.R15
+	humanoid.HipHeight = 2
+	humanoid.Parent = bot
+	return bot
+end
+
 local function spawnBot(key: string)
 	botCount += 1
 	local info = Config.Teams[key]
-	local description = Instance.new("HumanoidDescription")
-	-- 팀 색 군복 느낌: 몸통·팔을 팀 색으로
-	local color = info.Color.Color
-	description.TorsoColor = color
-	description.LeftArmColor = color
-	description.RightArmColor = color
-	local ok, bot = pcall(function()
-		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
-	end)
-	if not ok or not bot then
-		warn("봇 생성 실패:", bot)
-		return
-	end
+	local bot = buildBot(info.Color.Color)
 	bot.Name = string.format("%s 봇 %d", info.Name, botCount)
-	local humanoid = bot:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.DisplayName = bot.Name
-	end
-	bot:PivotTo(CFrame.new(info.Side * L / 4, 5, (math.random() - 0.5) * W * 0.6))
+	local humanoid = bot:FindFirstChildOfClass("Humanoid") :: Humanoid
+	humanoid.DisplayName = bot.Name
+	bot:PivotTo(CFrame.new(info.Side * L / 4, 4, (math.random() - 0.5) * W * 0.6))
 	bot.Parent = folder
 	PlayerService.registerBot(bot, key)
 	local root = rootOf(bot)
