@@ -1,7 +1,8 @@
 -- 축구공(일반 크기): 킥오프 때 인원에 맞춰 놓이는 공들, 자석 드리블, 킥 처리, 골 판정
 -- * 축구공은 발로만 다룬다.
 -- * 공에 닿으면 소유권을 얻고, 공이 발 앞에 붙어서 따라온다 (자석 드리블). 소유 중에는 팀 색 테두리.
--- * 다른 선수가 닿으면 공을 뺏는다 (잡은 직후 STEAL_PROTECT 동안은 보호).
+-- * 드리블 중인 공은 선수 몸과 부딪히지 않는다 (올라타기 방지). 대신 다른 선수가
+--   공에 STEAL_RANGE 만큼 가까이 오면 뺏는다 (잡은 직후 STEAL_PROTECT 동안은 보호).
 -- * 드리블 중 헤딩하면 공을 놓치고, CONTROL_LOCK_TIME 동안 축구공을 다시 못 잡는다.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -75,6 +76,7 @@ local function release(ball: Part)
 	end
 	owner[ball] = nil
 	highlight[ball].Enabled = false
+	ball.CollisionGroup = CollisionGroups.SoccerBall
 	if possession.player.Parent then
 		possession.player:SetAttribute("Dribbling", ownsAny(possession.player))
 	end
@@ -85,6 +87,7 @@ local function grab(ball: Part, player: Actor)
 	local key = PlayerService.teamKeyOf(player)
 	highlight[ball].OutlineColor = if key then Config.Teams[key].Color.Color else Color3.new(1, 1, 1)
 	highlight[ball].Enabled = true
+	ball.CollisionGroup = CollisionGroups.DribbledBall
 	player:SetAttribute("Dribbling", true)
 end
 
@@ -201,12 +204,44 @@ function BallService.dropFor(player: Actor)
 	end
 end
 
+-- 공을 잡을 수 있는 선수인지 (헤딩 직후·킥 직후·공중볼이면 불가)
+local function canGrab(actor: Actor, ball: Part, now: number): boolean
+	return enabled
+		and PlayerService.canTouchSoccer(actor)
+		and now >= (regrabAt[actor] or 0)
+		and ball.Position.Y <= GRAB_MAX_HEIGHT
+end
+
+-- 드리블 중인 공 근처에 다른 선수가 오면 뺏는다
+local function checkSteal(ball: Part, possession: Possession)
+	local now = os.clock()
+	if now - possession.since < Config.STEAL_PROTECT then
+		return
+	end
+	for _, actor in PlayerService.allActors() do
+		if actor ~= possession.player and canGrab(actor, ball, now) then
+			local root = aliveRoot(actor)
+			if root then
+				local offset = ball.Position - root.Position
+				if Vector3.new(offset.X, 0, offset.Z).Magnitude < Config.STEAL_RANGE then
+					release(ball)
+					grab(ball, actor)
+					lastToucher[ball] = actor
+					return
+				end
+			end
+		end
+	end
+end
+
 -- 드리블 중인 공을 소유자의 발 앞으로 끌어당긴다
 local function updateDribble(ball: Part)
 	local possession = owner[ball]
 	if not possession then
 		return
 	end
+	checkSteal(ball, possession)
+	possession = owner[ball] :: Possession
 	local root = aliveRoot(possession.player)
 	if not root then
 		release(ball)

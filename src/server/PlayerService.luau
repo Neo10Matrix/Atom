@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local CollisionGroups = require(script.Parent.CollisionGroups)
 
 local DEFAULT_JUMP_HEIGHT = 7.2
 local DEFAULT_JUMP_POWER = 50
@@ -75,7 +76,7 @@ function PlayerService.membersOf(key: string): { Actor }
 	return members
 end
 
-local function allActors(): { Actor }
+function PlayerService.allActors(): { Actor }
 	local actors: { Actor } = {}
 	for _, key in Config.TEAM_ORDER do
 		for _, actor in PlayerService.membersOf(key) do
@@ -151,6 +152,7 @@ local function dressUp(character: Model, key: string?)
 end
 
 local function onCharacter(player: Player, character: Model)
+	CollisionGroups.applyToCharacter(character)
 	local humanoid = character:WaitForChild("Humanoid", 5) :: Humanoid?
 	if humanoid then
 		applyMovement(humanoid)
@@ -211,6 +213,7 @@ function PlayerService.registerBot(bot: Model, key: string)
 	bot:SetAttribute("IsBot", true)
 	bot:SetAttribute("TeamKey", key)
 	table.insert(bots, bot)
+	CollisionGroups.applyToCharacter(bot)
 	local humanoid = bot:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		applyMovement(humanoid)
@@ -278,7 +281,7 @@ end
 
 function PlayerService.setFrozen(value: boolean)
 	frozen = value
-	for _, actor in allActors() do
+	for _, actor in PlayerService.allActors() do
 		local character = PlayerService.characterOf(actor)
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then

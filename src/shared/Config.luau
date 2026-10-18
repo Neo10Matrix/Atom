@@ -37,6 +37,7 @@ Config.DRIBBLE_OFFSET = 3.5 -- 캐릭터 중심에서 공까지 앞쪽 거리
 Config.DRIBBLE_GAIN = 10 -- 공이 목표 위치로 끌려가는 세기
 Config.DRIBBLE_BREAK = 10 -- 이보다 멀어지면 소유권을 잃음
 Config.STEAL_PROTECT = 0.5 -- 공을 잡은 직후 이 시간 동안은 뺏기지 않음 (초)
+Config.STEAL_RANGE = 4 -- 드리블 중인 공에 상대가 이만큼 가까이 오면 뺏음
 Config.HEADER_DROP_SPEED = 25 -- 헤딩할 때 놓친 축구공이 굴러가는 속도
 
 -- 축구공 (일반 크기, 발로만)
