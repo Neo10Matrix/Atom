@@ -23,11 +23,12 @@ Config.KEEPER_BOX_WIDTH = 70
 
 -- 공
 Config.BALL_DIAMETER = 4
+Config.START_BALLS = 3 -- 킥오프 때 경기장에 놓이는 흰 공 개수
 Config.BONUS_BALL_LIFETIME = 20 -- 전차 포탄으로 생긴 공이 사라지기까지 (초)
 Config.MAX_BONUS_BALLS = 9
 
 -- 킥 (모든 병과 공통)
-Config.KICK_RANGE = 7
+Config.KICK_RANGE = 10
 Config.KICK_COOLDOWN = 0.35
 Config.KICK_MIN_SPEED = 35
 Config.KICK_MAX_SPEED = 110
@@ -60,6 +61,7 @@ Config.SPECIAL_FLIGHT_TIME = 1.5 -- 골대까지 날아가는 시간 (초)
 Config.SPECIAL_LIFETIME = 6
 
 -- 진영 규칙: 자기 진영에서 적 방향으로 공을 찬 선수만 하프라인을 넘을 수 있다
+Config.HALF_LINE_ENABLED = false -- 지금은 테스트를 위해 꺼 둠 (true 로 바꾸면 하프라인 벽 작동)
 Config.CROSS_WINDOW = 8 -- 킥 후 하프라인을 넘을 수 있는 시간 (초)
 
 Config.Classes = {

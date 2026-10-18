@@ -11,7 +11,8 @@ local ZoneService = require(script.Parent.ZoneService)
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
 local D = Config.BALL_DIAMETER
-local CENTER = Vector3.new(0, D / 2 + 0.5, 0)
+-- 킥오프 때 메인 공(흰 공)들이 놓이는 자리: 센터 서클 안에 Z축으로 나란히
+local START_SPACING = 12
 -- 클라이언트/서버 시간 차이로 정상 입력이 거부되지 않도록 쿨다운을 조금 느슨하게 검사
 local COOLDOWN_LENIENCY = 0.9
 -- 소총 지연 보정: 클라이언트가 본 공 위치는 과거이므로 최대 이만큼 되감아서도 판정
@@ -30,7 +31,8 @@ export type BallEvent = {
 local BallService = {}
 
 local ballsFolder: Folder
-local mainBall: Part
+local mainBalls: { Part } = {}
+local startPosition: { [Part]: Vector3 } = {}
 local bonusExpiry: { [Part]: number } = {}
 local lastToucher: { [Part]: Player } = {}
 local lastAction: { [Player]: { [string]: number } } = {}
@@ -232,7 +234,7 @@ end
 
 -- 보너스 공이 최대 개수에 도달했으면 가장 오래된 것부터 제거
 local function makeRoomForBonus()
-	while #ballsFolder:GetChildren() - 1 >= Config.MAX_BONUS_BALLS do
+	while #ballsFolder:GetChildren() - #mainBalls >= Config.MAX_BONUS_BALLS do
 		local oldest: Part? = nil
 		for ball, expiry in bonusExpiry do
 			if not oldest or expiry < bonusExpiry[oldest] then
@@ -373,7 +375,12 @@ end
 function BallService.init(field: Folder, net: Folder)
 	ballsFolder = field:WaitForChild("Balls") :: Folder
 	announceEvent = net:WaitForChild("Announce") :: RemoteEvent
-	mainBall = makeBall("main")
+	for i = 1, Config.START_BALLS do
+		local ball = makeBall("main")
+		local z = (i - (Config.START_BALLS + 1) / 2) * START_SPACING
+		startPosition[ball] = Vector3.new(0, D / 2 + 0.5, z)
+		table.insert(mainBalls, ball)
+	end
 	BallService.reset()
 
 	local kick = net:WaitForChild("Kick") :: RemoteEvent
@@ -385,27 +392,31 @@ function BallService.init(field: Folder, net: Folder)
 	end)
 end
 
-local function placeMainAtCenter()
-	mainBall.CFrame = CFrame.new(CENTER)
-	mainBall.AssemblyLinearVelocity = Vector3.zero
-	mainBall.AssemblyAngularVelocity = Vector3.zero
-	lastToucher[mainBall] = nil
+local function placeAtStart(ball: Part)
+	ball.CFrame = CFrame.new(startPosition[ball])
+	ball.AssemblyLinearVelocity = Vector3.zero
+	ball.AssemblyAngularVelocity = Vector3.zero
+	lastToucher[ball] = nil
 end
 
--- 킥오프 준비: 보너스/스페셜 공 제거, 메인 공을 중앙에 고정, 조작 비활성화
+-- 킥오프 준비: 보너스/스페셜 공 제거, 메인 공들을 시작 자리에 고정, 조작 비활성화
 function BallService.reset()
 	enabled = false
 	round += 1
 	for ball in bonusExpiry do
 		destroyBall(ball)
 	end
-	mainBall.Anchored = true
-	placeMainAtCenter()
+	for _, ball in mainBalls do
+		ball.Anchored = true
+		placeAtStart(ball)
+	end
 end
 
 function BallService.release()
-	mainBall.Anchored = false
-	mainBall:SetNetworkOwner(nil)
+	for _, ball in mainBalls do
+		ball.Anchored = false
+		ball:SetNetworkOwner(nil)
+	end
 	enabled = true
 end
 
@@ -419,7 +430,7 @@ function BallService.step(): { BallEvent }
 	local now = os.clock()
 	for _, child in ballsFolder:GetChildren() do
 		local ball = child :: Part
-		local isMain = ball == mainBall
+		local isMain = ballKind[ball] == "main"
 		local p = ball.Position
 		if math.abs(p.Z) < Config.GOAL_WIDTH / 2 and p.Y < Config.GOAL_HEIGHT and math.abs(p.X) > L / 2 + D / 2 then
 			table.insert(events, {
@@ -441,7 +452,7 @@ function BallService.step(): { BallEvent }
 			or math.abs(p.Z) > W / 2 + 10
 		then
 			if isMain then
-				placeMainAtCenter()
+				placeAtStart(ball)
 				table.insert(events, { kind = "out", isMain = true, ballKind = "main" })
 			else
 				destroyBall(ball)

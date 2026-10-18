@@ -95,7 +95,9 @@ local function buildWalls(field: Folder)
 	folder.Name = "ZoneWalls"
 	folder.Parent = field
 
-	wall(folder, ZoneService.Groups.HalfLine, Vector3.new(2, WH, W), Vector3.new(0, WH / 2, 0), true)
+	if Config.HALF_LINE_ENABLED then
+		wall(folder, ZoneService.Groups.HalfLine, Vector3.new(2, WH, W), Vector3.new(0, WH / 2, 0), true)
+	end
 
 	local depth, width = Config.KEEPER_BOX_DEPTH, Config.KEEPER_BOX_WIDTH
 	for _, key in Config.TEAM_ORDER do
@@ -166,7 +168,7 @@ local function step()
 			local depth = root.Position.X * side
 			local entry = getState(player)
 
-			if PlayerService.classOf(player) == "Goalkeeper" then
+			if PlayerService.classOf(player) == "Goalkeeper" or not Config.HALF_LINE_ENABLED then
 				entry.state = "Locked"
 			elseif entry.state == "Ready" then
 				if depth < 0 then
@@ -182,7 +184,7 @@ local function step()
 				character:PivotTo(root.CFrame.Rotation + Vector3.new(side * 6, root.Position.Y, root.Position.Z))
 			end
 
-			player:SetAttribute("ZoneState", entry.state)
+			player:SetAttribute("ZoneState", if Config.HALF_LINE_ENABLED then entry.state else "Off")
 			applyGroup(character, desiredGroup(player, key))
 		end
 	end

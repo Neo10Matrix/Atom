@@ -14,6 +14,8 @@ local KHAKI = Color3.fromRGB(215, 200, 150)
 local HUD = {}
 
 local chargeFill: Frame
+local hintLabel: TextLabel
+local hintToken = 0
 local chargeFrame: Frame
 local abilityLabel: TextLabel
 
@@ -125,6 +127,17 @@ function HUD.init()
 		Parent = chargeFrame,
 	}, { corner(7) })
 
+	-- 짧은 안내 (킥 실패 이유 등)
+	hintLabel = label({
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -130),
+		Size = UDim2.new(0, 320, 0, 24),
+		TextColor3 = Color3.fromRGB(255, 230, 150),
+		TextStrokeTransparency = 0.4,
+		Visible = false,
+		Parent = gui,
+	})
+
 	-- 병과 선택 + 조작 안내
 	local panel = make("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
@@ -188,6 +201,9 @@ function HUD.init()
 		if class == "Goalkeeper" then
 			zoneLabel.Text = "골키퍼 구역 사수"
 			zoneLabel.TextColor3 = KHAKI
+		elseif zone == "Off" then
+			zoneLabel.Text = "진영 규칙 꺼짐 (테스트 중)"
+			zoneLabel.TextColor3 = KHAKI
 		elseif zone == "Ready" then
 			local remaining = (player:GetAttribute("CrossExpiry") or 0) - workspace:GetServerTimeNow()
 			zoneLabel.Text = string.format("돌파 허가! 하프라인 통과 가능 (%d초)", math.max(0, math.ceil(remaining)))
@@ -245,6 +261,18 @@ function HUD.init()
 				announcement.Visible = false
 			end
 		end)
+	end)
+end
+
+function HUD.flash(text: string)
+	hintToken += 1
+	local token = hintToken
+	hintLabel.Text = text
+	hintLabel.Visible = true
+	task.delay(1.5, function()
+		if hintToken == token then
+			hintLabel.Visible = false
+		end
 	end)
 end
 

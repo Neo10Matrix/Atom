@@ -51,6 +51,29 @@ local function aimPoint(inputObject: InputObject): Vector3
 	return if result then result.Position else ray.Origin + ray.Direction * 300
 end
 
+-- 킥이 안 되는 이유 (없으면 nil). 서버도 같은 조건을 다시 검사한다
+local function kickBlockReason(): string?
+	if net:GetAttribute("Phase") ~= "Playing" then
+		return "킥오프 전에는 찰 수 없어요"
+	end
+	local _, root = aliveCharacter()
+	local field = workspace:FindFirstChild("ArmySoccerField")
+	local balls = field and field:FindFirstChild("Balls")
+	if not root or not balls then
+		return nil
+	end
+	for _, ball in balls:GetChildren() do
+		if
+			ball:IsA("BasePart")
+			and ball.Name ~= "SpecialBall"
+			and (ball.Position - root.Position).Magnitude <= Config.KICK_RANGE
+		then
+			return nil
+		end
+	end
+	return "공에 더 가까이 가세요"
+end
+
 local function onKick(_, inputState: Enum.UserInputState)
 	if inputState == Enum.UserInputState.Begin then
 		chargeStart = os.clock()
@@ -59,7 +82,12 @@ local function onKick(_, inputState: Enum.UserInputState)
 		chargeStart = nil
 		hud.setCharge(0)
 		if inputState == Enum.UserInputState.End then
-			kickEvent:FireServer(power)
+			local reason = kickBlockReason()
+			if reason then
+				hud.flash(reason)
+			else
+				kickEvent:FireServer(power)
+			end
 		end
 	end
 	return Enum.ContextActionResult.Sink
