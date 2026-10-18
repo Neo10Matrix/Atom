@@ -58,7 +58,7 @@ local function addHelmet(character: Model, team: Team?)
 	if not head then
 		return
 	end
-	local width = math.min(head.Size.X, head.Size.Z) * 1.3
+	local width = math.min(head.Size.X, head.Size.Z) * 1.45
 	local helmet = Instance.new("Part")
 	helmet.Name = "ArmyHelmet"
 	helmet.Size = Vector3.one
@@ -84,6 +84,25 @@ local function onCharacter(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 5) :: Humanoid?
 	if humanoid then
 		applyMovement(humanoid, player)
+	end
+
+	-- 아바타 외형이 로드되면서 머리가 교체되면 먼저 붙인 헬멧이 떨어지므로 로드를 기다린다
+	local deadline = os.clock() + 5
+	while not player:HasAppearanceLoaded() and os.clock() < deadline do
+		task.wait(0.1)
+	end
+	if player.Character ~= character or not character.Parent then
+		return
+	end
+
+	-- 군대 복장 통일: 헬멧을 가리는 모자·머리카락 액세서리를 벗긴다
+	for _, child in character:GetChildren() do
+		if
+			child:IsA("Accessory")
+			and (child.AccessoryType == Enum.AccessoryType.Hat or child.AccessoryType == Enum.AccessoryType.Hair)
+		then
+			child:Destroy()
+		end
 	end
 	addHelmet(character, player.Team)
 end
