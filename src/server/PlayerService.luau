@@ -12,8 +12,8 @@ local PlayerService = {}
 PlayerService.teams = {} :: { [string]: Team }
 
 local frozen = false
--- 마지막으로 다룬 공 종류("Soccer" / "Shuttle")와 시각
-local control: { [Player]: { kind: string, time: number } } = {}
+-- 헤딩한 선수는 이 시각(os.clock)까지 축구공을 잡거나 찰 수 없다
+local soccerLockedUntil: { [Player]: number } = {}
 
 local function teamKeyOf(player: Player): string?
 	return player.Team and player.Team:GetAttribute("Key")
@@ -137,7 +137,7 @@ function PlayerService.init()
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(function(player)
-		control[player] = nil
+		soccerLockedUntil[player] = nil
 	end)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
@@ -169,21 +169,15 @@ function PlayerService.positionPlayers()
 	end
 end
 
--- 공 두 개 동시 컨트롤 금지: 다른 종류의 공을 다룬 지 CONTROL_LOCK_TIME 이 지나야 이 공을 다룰 수 있다
-function PlayerService.canControl(player: Player, kind: string): boolean
-	local last = control[player]
-	return not last or last.kind == kind or os.clock() - last.time > Config.CONTROL_LOCK_TIME
+-- 한 사람은 공 두 개를 동시에 다룰 수 없다: 헤딩하면 CONTROL_LOCK_TIME 동안 축구공을 못 잡는다
+function PlayerService.lockSoccer(player: Player)
+	soccerLockedUntil[player] = os.clock() + Config.CONTROL_LOCK_TIME
+	player:SetAttribute("SoccerLockUntil", workspace:GetServerTimeNow() + Config.CONTROL_LOCK_TIME)
 end
 
--- 공을 다뤘다고 기록한다. 다른 공을 다루는 중이라 막히면 false
-function PlayerService.markControl(player: Player, kind: string): boolean
-	if not PlayerService.canControl(player, kind) then
-		return false
-	end
-	control[player] = { kind = kind, time = os.clock() }
-	player:SetAttribute("Control", kind)
-	player:SetAttribute("ControlUntil", workspace:GetServerTimeNow() + Config.CONTROL_LOCK_TIME)
-	return true
+function PlayerService.canTouchSoccer(player: Player): boolean
+	local untilTime = soccerLockedUntil[player]
+	return not untilTime or os.clock() >= untilTime
 end
 
 function PlayerService.setFrozen(value: boolean)

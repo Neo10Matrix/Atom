@@ -29,8 +29,15 @@ Config.WALK_SPEED = 20
 Config.PLAYERS_PER_BALL = 4
 
 -- 한 사람은 공 두 개를 동시에 다룰 수 없다:
--- 축구공을 드리블(몸에 닿음)·킥하면 이 시간 동안 헤딩 불가, 셔틀콕을 헤딩하면 이 시간 동안 킥 불가
+-- 축구공 드리블 중에도 헤딩은 되지만, 헤딩하면 축구공을 놓치고 이 시간 동안 다시 못 잡는다
 Config.CONTROL_LOCK_TIME = 1.5
+
+-- 자석 드리블: 축구공에 닿으면 공이 발 앞에 붙어서 따라온다
+Config.DRIBBLE_OFFSET = 3.5 -- 캐릭터 중심에서 공까지 앞쪽 거리
+Config.DRIBBLE_GAIN = 10 -- 공이 목표 위치로 끌려가는 세기
+Config.DRIBBLE_BREAK = 10 -- 이보다 멀어지면 소유권을 잃음
+Config.STEAL_PROTECT = 0.5 -- 공을 잡은 직후 이 시간 동안은 뺏기지 않음 (초)
+Config.HEADER_DROP_SPEED = 25 -- 헤딩할 때 놓친 축구공이 굴러가는 속도
 
 -- 축구공 (일반 크기, 발로만)
 Config.BALL_DIAMETER = 4

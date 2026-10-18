@@ -1,5 +1,8 @@
--- 축구공(일반 크기): 킥오프 때 인원에 맞춰 놓이는 공들, 킥 처리, 골 판정
--- 축구공은 발로만 찬다
+-- 축구공(일반 크기): 킥오프 때 인원에 맞춰 놓이는 공들, 자석 드리블, 킥 처리, 골 판정
+-- * 축구공은 발로만 다룬다.
+-- * 공에 닿으면 소유권을 얻고, 공이 발 앞에 붙어서 따라온다 (자석 드리블). 소유 중에는 팀 색 테두리.
+-- * 다른 선수가 닿으면 공을 뺏는다 (잡은 직후 STEAL_PROTECT 동안은 보호).
+-- * 드리블 중 헤딩하면 공을 놓치고, CONTROL_LOCK_TIME 동안 축구공을 다시 못 잡는다.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,6 +17,10 @@ local D = Config.BALL_DIAMETER
 local START_SPACING = D + 6
 -- 클라이언트/서버 시간 차이로 정상 입력이 거부되지 않도록 쿨다운을 조금 느슨하게 검사
 local COOLDOWN_LENIENCY = 0.9
+-- 찬 공이 바로 다시 발에 붙지 않도록 잠깐 잡기 금지 (초)
+local KICK_REGRAB_DELAY = 0.4
+-- 공이 이 높이보다 떠 있으면 드리블로 잡지 않는다 (공중볼은 그냥 튕김)
+local GRAB_MAX_HEIGHT = D / 2 + 2.5
 
 export type BallEvent = {
 	kind: "goal" | "out",
@@ -21,14 +28,84 @@ export type BallEvent = {
 	scorer: Player?,
 }
 
+type Possession = { player: Player, since: number }
+
 local BallService = {}
 
 local folder: Instance
 local balls: { Part } = {}
 local startPosition: { [Part]: Vector3 } = {}
 local lastToucher: { [Part]: Player } = {}
+local owner: { [Part]: Possession } = {}
+local highlight: { [Part]: Highlight } = {}
 local lastKick: { [Player]: number } = {}
+local regrabAt: { [Player]: number } = {}
 local enabled = false
+
+local function aliveRoot(player: Player): BasePart?
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not root or not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+	return root
+end
+
+local function flatLook(root: BasePart): Vector3
+	local look = root.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	return if flat.Magnitude > 1e-3 then flat.Unit else Vector3.xAxis
+end
+
+local function ownsAny(player: Player): boolean
+	for _, possession in owner do
+		if possession.player == player then
+			return true
+		end
+	end
+	return false
+end
+
+local function release(ball: Part)
+	local possession = owner[ball]
+	if not possession then
+		return
+	end
+	owner[ball] = nil
+	highlight[ball].Enabled = false
+	if possession.player.Parent then
+		possession.player:SetAttribute("Dribbling", ownsAny(possession.player))
+	end
+end
+
+local function grab(ball: Part, player: Player)
+	owner[ball] = { player = player, since = os.clock() }
+	local team = player.Team
+	highlight[ball].OutlineColor = if team then team.TeamColor.Color else Color3.new(1, 1, 1)
+	highlight[ball].Enabled = true
+	player:SetAttribute("Dribbling", true)
+end
+
+local function onTouched(ball: Part, hit: BasePart)
+	local model = hit:FindFirstAncestorOfClass("Model")
+	local player = model and Players:GetPlayerFromCharacter(model)
+	if not player or not PlayerService.canTouchSoccer(player) then
+		return
+	end
+	lastToucher[ball] = player
+
+	local now = os.clock()
+	if not enabled or ball.Position.Y > GRAB_MAX_HEIGHT or now < (regrabAt[player] or 0) then
+		return
+	end
+	local current = owner[ball]
+	if current and (current.player == player or now - current.since < Config.STEAL_PROTECT) then
+		return
+	end
+	release(ball)
+	grab(ball, player)
+end
 
 local function makeBall(): Part
 	local ball = Instance.new("Part")
@@ -53,49 +130,43 @@ local function makeBall(): Part
 	trail.Transparency = NumberSequence.new(0.4, 1)
 	trail.Parent = ball
 
+	-- 소유 중 표시: 소유한 선수의 팀 색 테두리
+	local outline = Instance.new("Highlight")
+	outline.FillTransparency = 1
+	outline.OutlineTransparency = 0
+	outline.Enabled = false
+	outline.Parent = ball
+	highlight[ball] = outline
+
 	ball.Touched:Connect(function(hit)
-		local model = hit:FindFirstAncestorOfClass("Model")
-		local player = model and Players:GetPlayerFromCharacter(model)
-		-- 몸에 닿으면 드리블 중으로 기록 (헤딩 직후라면 드리블로 치지 않음)
-		if player and PlayerService.markControl(player, "Soccer") then
-			lastToucher[ball] = player
-		end
+		onTouched(ball, hit)
 	end)
 	return ball
 end
 
-local function aliveRoot(player: Player): BasePart?
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not root or not humanoid or humanoid.Health <= 0 then
-		return nil
-	end
-	return root
-end
-
--- 킥 (축구는 발로만): 가장 가까운 공을 캐릭터가 바라보는 방향으로 찬다
+-- 킥: 드리블 중인 공이 있으면 그 공을, 없으면 가장 가까운 공을 바라보는 방향으로 찬다
 local function onKick(player: Player, power: unknown)
 	if not enabled or typeof(power) ~= "number" or power ~= power then
 		return
 	end
 	local root = aliveRoot(player)
-	if not root or not PlayerService.canControl(player, "Soccer") then
+	if not root or not PlayerService.canTouchSoccer(player) then
 		return
 	end
-	local look = root.CFrame.LookVector
-	local flat = Vector3.new(look.X, 0, look.Z)
-	if flat.Magnitude < 1e-3 then
-		return
-	end
-	local direction = flat.Unit
 
 	local target: Part? = nil
-	local bestDistance = Config.KICK_RANGE
-	for _, ball in balls do
-		local distance = (ball.Position - root.Position).Magnitude
-		if distance <= bestDistance then
-			target, bestDistance = ball, distance
+	for ball, possession in owner do
+		if possession.player == player then
+			target = ball
+		end
+	end
+	if not target then
+		local bestDistance = Config.KICK_RANGE
+		for _, ball in balls do
+			local distance = (ball.Position - root.Position).Magnitude
+			if distance <= bestDistance then
+				target, bestDistance = ball, distance
+			end
 		end
 	end
 	local now = os.clock()
@@ -104,16 +175,55 @@ local function onKick(player: Player, power: unknown)
 		return
 	end
 	lastKick[player] = now
-	PlayerService.markControl(player, "Soccer")
+	regrabAt[player] = now + KICK_REGRAB_DELAY
+	release(target)
 
 	local alpha = math.clamp(power :: number, 0, 1)
 	local speed = Config.KICK_MIN_SPEED + (Config.KICK_MAX_SPEED - Config.KICK_MIN_SPEED) * alpha
 	local lift = Config.KICK_MIN_LIFT + (Config.KICK_MAX_LIFT - Config.KICK_MIN_LIFT) * alpha
-	target.AssemblyLinearVelocity = (direction + Vector3.new(0, lift, 0)).Unit * speed
+	target.AssemblyLinearVelocity = (flatLook(root) + Vector3.new(0, lift, 0)).Unit * speed
 	lastToucher[target] = player
 end
 
+-- 헤딩하면 호출: 드리블 중이던 축구공을 놓쳐서 앞으로 굴러가고, 잠시 축구공을 못 잡는다
+function BallService.dropFor(player: Player)
+	PlayerService.lockSoccer(player)
+	local root = aliveRoot(player)
+	for _, ball in balls do
+		local possession = owner[ball]
+		if possession and possession.player == player then
+			release(ball)
+			if root then
+				ball.AssemblyLinearVelocity = flatLook(root) * Config.HEADER_DROP_SPEED + Vector3.new(0, 8, 0)
+			end
+		end
+	end
+end
+
+-- 드리블 중인 공을 소유자의 발 앞으로 끌어당긴다
+local function updateDribble(ball: Part)
+	local possession = owner[ball]
+	if not possession then
+		return
+	end
+	local root = aliveRoot(possession.player)
+	if not root then
+		release(ball)
+		return
+	end
+	local target = root.Position + flatLook(root) * Config.DRIBBLE_OFFSET
+	local offset = Vector3.new(target.X - ball.Position.X, 0, target.Z - ball.Position.Z)
+	if offset.Magnitude > Config.DRIBBLE_BREAK then
+		release(ball)
+		return
+	end
+	local runVelocity = root.AssemblyLinearVelocity
+	local desired = Vector3.new(runVelocity.X, 0, runVelocity.Z) + offset * Config.DRIBBLE_GAIN
+	ball.AssemblyLinearVelocity = Vector3.new(desired.X, ball.AssemblyLinearVelocity.Y, desired.Z)
+end
+
 local function placeAtStart(ball: Part)
+	release(ball)
 	ball.CFrame = CFrame.new(startPosition[ball])
 	ball.AssemblyLinearVelocity = Vector3.zero
 	ball.AssemblyAngularVelocity = Vector3.zero
@@ -128,6 +238,12 @@ function BallService.init(field: Folder, net: Folder)
 	kick.OnServerEvent:Connect(onKick)
 	Players.PlayerRemoving:Connect(function(player)
 		lastKick[player] = nil
+		regrabAt[player] = nil
+		for _, ball in balls do
+			if owner[ball] and owner[ball].player == player then
+				release(ball)
+			end
+		end
 	end)
 end
 
@@ -141,8 +257,10 @@ function BallService.reset(count: number)
 	end
 	while #balls > count do
 		local ball = table.remove(balls) :: Part
+		release(ball)
 		startPosition[ball] = nil
 		lastToucher[ball] = nil
+		highlight[ball] = nil
 		ball:Destroy()
 	end
 	for i, ball in balls do
@@ -161,13 +279,15 @@ function BallService.release()
 	enabled = true
 end
 
--- 매 프레임 호출: 골/아웃을 처리하고 발생한 이벤트 목록을 돌려준다
+-- 매 프레임 호출: 드리블, 골/아웃을 처리하고 발생한 이벤트 목록을 돌려준다
 function BallService.step(): { BallEvent }
 	local events: { BallEvent } = {}
 	for _, ball in balls do
+		updateDribble(ball)
 		local p = ball.Position
 		if math.abs(p.Z) < Config.GOAL_WIDTH / 2 and p.Y < Config.GOAL_HEIGHT and math.abs(p.X) > L / 2 + D / 2 then
 			enabled = false
+			release(ball)
 			table.insert(events, {
 				kind = "goal",
 				side = if p.X < 0 then -1 else 1,

@@ -121,15 +121,17 @@ function HUD.init()
 		Parent = gui,
 	})
 	RunService.Heartbeat:Connect(function()
-		local remaining = (player:GetAttribute("ControlUntil") or 0) - workspace:GetServerTimeNow()
-		local kind = player:GetAttribute("Control")
-		controlLabel.Visible = remaining > 0
-		if kind == "Soccer" then
-			controlLabel.Text = string.format("⚽ 드리블 중 — 헤딩 불가 (%.1f초)", remaining)
+		local locked = (player:GetAttribute("SoccerLockUntil") or 0) - workspace:GetServerTimeNow()
+		if locked > 0 then
+			controlLabel.Visible = true
+			controlLabel.Text = string.format("🏸 헤딩! 축구공을 놓침 — %.1f초 뒤 다시 잡기 가능", locked)
+			controlLabel.TextColor3 = Color3.fromRGB(255, 230, 150)
+		elseif player:GetAttribute("Dribbling") then
+			controlLabel.Visible = true
+			controlLabel.Text = "⚽ 드리블 중 — 헤딩하면 공을 놓쳐요"
 			controlLabel.TextColor3 = Color3.fromRGB(200, 230, 255)
 		else
-			controlLabel.Text = string.format("🏸 헤딩 중 — 킥 불가 (%.1f초)", remaining)
-			controlLabel.TextColor3 = Color3.fromRGB(255, 230, 150)
+			controlLabel.Visible = false
 		end
 	end)
 
@@ -174,7 +176,7 @@ function HUD.init()
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n공은 한 번에 하나만!  |  Q: 돌격",
+		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n드리블 중 헤딩하면 공을 놓쳐요  |  Q: 돌격",
 		Parent = panel,
 	})
 
