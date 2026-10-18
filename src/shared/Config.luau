@@ -18,6 +18,8 @@ Config.WALL_HEIGHT = 110 -- 투명 벽/천장 높이 (전차 포물선이 넘지
 Config.GOAL_WIDTH = 32
 Config.GOAL_HEIGHT = 12
 Config.GOAL_DEPTH = 8
+Config.KEEPER_BOX_DEPTH = 30 -- 골키퍼 구역(페널티 박스) 깊이
+Config.KEEPER_BOX_WIDTH = 70
 
 -- 공
 Config.BALL_DIAMETER = 4
@@ -50,23 +52,40 @@ Config.TANK_SPREAD = 14 -- 착탄 지점 흩어짐 반경
 Config.TANK_MIN_FLIGHT = 0.9 -- 비행 시간 (초). 길수록 포물선이 높아짐 (최고점 ≈ 중력 × 시간² / 8)
 Config.TANK_MAX_FLIGHT = 1.9
 Config.TANK_FLIGHT_PER_STUD = 1 / 90
-Config.MAX_TANKS_PER_TEAM = 1
+
+-- 골키퍼 스페셜 슛: 충전 중 이동 불가, 상대 골키퍼·필드 선수를 통과한다.
+-- 상대 소총수 사격 또는 전차 포탄 공에 맞아야만 궤적이 바뀐다.
+Config.SPECIAL_CHARGE_TIME = 3
+Config.SPECIAL_FLIGHT_TIME = 1.5 -- 골대까지 날아가는 시간 (초)
+Config.SPECIAL_LIFETIME = 6
+
+-- 진영 규칙: 자기 진영에서 적 방향으로 공을 찬 선수만 하프라인을 넘을 수 있다
+Config.CROSS_WINDOW = 8 -- 킥 후 하프라인을 넘을 수 있는 시간 (초)
 
 Config.Classes = {
 	Rifleman = {
 		Name = "소총수",
 		WalkSpeed = 20,
 		Cooldown = 0.6,
+		MaxPerTeam = nil,
 		Description = "클릭: 사격 — 맞은 공의 궤적을 살짝 바꿈",
 	},
 	Tank = {
 		Name = "전차병",
 		WalkSpeed = 16,
 		Cooldown = 8,
+		MaxPerTeam = 1,
 		Description = "클릭: 포격 — 공 여러 개를 포물선으로 발사",
 	},
+	Goalkeeper = {
+		Name = "골키퍼",
+		WalkSpeed = 18,
+		Cooldown = 15,
+		MaxPerTeam = 1,
+		Description = "클릭: 스페셜 슛 — 충전 3초 동안 이동 불가",
+	},
 }
-Config.CLASS_ORDER = { "Rifleman", "Tank" }
+Config.CLASS_ORDER = { "Rifleman", "Tank", "Goalkeeper" }
 Config.DEFAULT_CLASS = "Rifleman"
 
 -- 팀. Side = 자기 골대가 있는 X 방향 (-1 이면 x < 0 쪽 골대를 지킴)

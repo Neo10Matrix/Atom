@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
 local PlayerService = require(script.Parent.PlayerService)
+local ZoneService = require(script.Parent.ZoneService)
 
 local MatchService = {}
 
@@ -37,6 +38,7 @@ end
 local function kickoff()
 	BallService.reset()
 	PlayerService.positionPlayers()
+	ZoneService.resetAll()
 	PlayerService.setFrozen(true)
 	setPhase("Countdown")
 	for i = Config.COUNTDOWN, 1, -1 do
@@ -66,8 +68,10 @@ local function handleGoal(event: BallService.BallEvent): boolean
 	else
 		text = string.format("골! %s", teamName)
 	end
-	if not event.isMain then
+	if event.ballKind == "bonus" then
 		text ..= " (포탄 공)"
+	elseif event.ballKind == "special" then
+		text ..= " (골키퍼 스페셜 슛!)"
 	end
 	announce(text, if event.isMain then Config.GOAL_CELEBRATION else 2)
 	return event.isMain

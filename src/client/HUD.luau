@@ -1,6 +1,7 @@
 -- 화면 UI: 점수판, 타이머, 안내 메시지, 킥 파워 게이지, 병과 선택
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
@@ -128,7 +129,7 @@ function HUD.init()
 	local panel = make("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 10, 1, -10),
-		Size = UDim2.new(0, 230, 0, 112),
+		Size = UDim2.new(0, 260, 0, 134),
 		BackgroundColor3 = OLIVE,
 		BackgroundTransparency = 0.2,
 		Parent = gui,
@@ -173,6 +174,32 @@ function HUD.init()
 		Text = "스킬 준비 완료",
 		Parent = panel,
 	})
+
+	local zoneLabel = label({
+		Position = UDim2.new(0, 8, 0, 110),
+		Size = UDim2.new(1, -16, 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	})
+	RunService.Heartbeat:Connect(function()
+		local class = player:GetAttribute("Class")
+		local zone = player:GetAttribute("ZoneState")
+		if class == "Goalkeeper" then
+			zoneLabel.Text = "골키퍼 구역 사수"
+			zoneLabel.TextColor3 = KHAKI
+		elseif zone == "Ready" then
+			local remaining = (player:GetAttribute("CrossExpiry") or 0) - workspace:GetServerTimeNow()
+			zoneLabel.Text = string.format("돌파 허가! 하프라인 통과 가능 (%d초)", math.max(0, math.ceil(remaining)))
+			zoneLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+		elseif zone == "Crossed" then
+			zoneLabel.Text = "적진 침투 중 — 복귀하면 다시 수비"
+			zoneLabel.TextColor3 = Color3.fromRGB(255, 140, 110)
+		else
+			zoneLabel.Text = "자기 진영 사수 (공을 적진으로 차면 돌파)"
+			zoneLabel.TextColor3 = KHAKI
+		end
+	end)
 
 	local function refreshClass()
 		local current = player:GetAttribute("Class") or Config.DEFAULT_CLASS

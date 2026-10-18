@@ -1,10 +1,12 @@
--- 공 관리: 메인 공 + 전차 포탄으로 생기는 보너스 공, 킥/사격/포격 처리, 골 판정
+-- 공 관리: 메인 공 + 전차 포탄 보너스 공 + 골키퍼 스페셜 슛 공
+-- 킥/사격/포격/스페셜 슛 처리와 골 판정
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local PlayerService = require(script.Parent.PlayerService)
+local ZoneService = require(script.Parent.ZoneService)
 
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
@@ -12,10 +14,15 @@ local D = Config.BALL_DIAMETER
 local CENTER = Vector3.new(0, D / 2 + 0.5, 0)
 -- 클라이언트/서버 시간 차이로 정상 입력이 거부되지 않도록 쿨다운을 조금 느슨하게 검사
 local COOLDOWN_LENIENCY = 0.9
+-- 소총 지연 보정: 클라이언트가 본 공 위치는 과거이므로 최대 이만큼 되감아서도 판정
+local MAX_REWIND = 0.4
+
+export type BallKind = "main" | "bonus" | "special"
 
 export type BallEvent = {
 	kind: "goal" | "out",
 	isMain: boolean,
+	ballKind: BallKind,
 	side: number?, -- 공이 들어간 골대 쪽 (-1 / 1)
 	scorer: Player?,
 }
@@ -27,16 +34,31 @@ local mainBall: Part
 local bonusExpiry: { [Part]: number } = {}
 local lastToucher: { [Part]: Player } = {}
 local lastAction: { [Player]: { [string]: number } } = {}
+local ballKind: { [Part]: BallKind } = {}
+local charging: { [Player]: boolean } = {}
 local enabled = false
+local round = 0 -- 킥오프마다 증가: 충전 중이던 스페셜 슛 취소용
+local announceEvent: RemoteEvent
 
-local function makeBall(isBonus: boolean): Part
+local BALL_STYLE: { [BallKind]: { name: string, color: Color3, material: Enum.Material } } = {
+	main = { name = "Ball", color = Color3.new(1, 1, 1), material = Enum.Material.SmoothPlastic },
+	bonus = { name = "BonusBall", color = Color3.fromRGB(255, 170, 60), material = Enum.Material.SmoothPlastic },
+	special = { name = "SpecialBall", color = Color3.fromRGB(255, 60, 60), material = Enum.Material.Neon },
+}
+
+local function makeBall(kind: BallKind): Part
+	local style = BALL_STYLE[kind]
 	local ball = Instance.new("Part")
-	ball.Name = if isBonus then "BonusBall" else "Ball"
+	ball.Name = style.name
 	ball.Shape = Enum.PartType.Ball
 	ball.Size = Vector3.one * D
-	ball.Material = Enum.Material.SmoothPlastic
-	ball.Color = if isBonus then Color3.fromRGB(255, 170, 60) else Color3.new(1, 1, 1)
+	ball.Material = style.material
+	ball.Color = style.color
 	ball.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.4, 0.6, 1, 1)
+	if kind == "special" then
+		ball.CollisionGroup = ZoneService.Groups.SpecialBall
+	end
+	ballKind[ball] = kind
 
 	local a0 = Instance.new("Attachment")
 	a0.Position = Vector3.new(0, D * 0.3, 0)
@@ -47,12 +69,15 @@ local function makeBall(isBonus: boolean): Part
 	local trail = Instance.new("Trail")
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
-	trail.Lifetime = 0.25
+	trail.Lifetime = if kind == "special" then 0.6 else 0.25
 	trail.Color = ColorSequence.new(ball.Color)
 	trail.Transparency = NumberSequence.new(0.4, 1)
 	trail.Parent = ball
 
 	ball.Touched:Connect(function(hit)
+		if kind == "special" then
+			return -- 스페셜 슛은 선수 몸에 영향을 받지 않으므로 득점자도 바뀌지 않는다
+		end
 		local model = hit:FindFirstAncestorOfClass("Model")
 		local player = model and Players:GetPlayerFromCharacter(model)
 		if player then
@@ -67,6 +92,7 @@ end
 local function destroyBall(ball: Part)
 	lastToucher[ball] = nil
 	bonusExpiry[ball] = nil
+	ballKind[ball] = nil
 	ball:Destroy()
 end
 
@@ -130,10 +156,11 @@ local function onKick(player: Player, power: unknown)
 
 	local target: Part? = nil
 	local bestDistance = Config.KICK_RANGE
-	for _, ball in ballsFolder:GetChildren() do
-		local distance = ((ball :: Part).Position - root.Position).Magnitude
-		if distance <= bestDistance and not (ball :: Part).Anchored then
-			target, bestDistance = ball :: Part, distance
+	for _, child in ballsFolder:GetChildren() do
+		local ball = child :: Part
+		local distance = (ball.Position - root.Position).Magnitude
+		if distance <= bestDistance and not ball.Anchored and ballKind[ball] ~= "special" then
+			target, bestDistance = ball, distance
 		end
 	end
 	if not target or not tryUse(player, "Kick", Config.KICK_COOLDOWN) then
@@ -145,6 +172,7 @@ local function onKick(player: Player, power: unknown)
 	local lift = Config.KICK_MIN_LIFT + (Config.KICK_MAX_LIFT - Config.KICK_MIN_LIFT) * alpha
 	target.AssemblyLinearVelocity = (direction + Vector3.new(0, lift, 0)).Unit * speed
 	lastToucher[target] = player
+	ZoneService.onKick(player, direction)
 end
 
 local function tracer(from: Vector3, to: Vector3)
@@ -175,16 +203,22 @@ local function rifleShot(player: Player, root: BasePart, target: Vector3)
 	end
 	local direction = offset.Unit
 
+	-- 현재 위치와, 플레이어 지연만큼 되감은 위치 둘 다 판정 (빠른 공도 맞힐 수 있도록)
+	local rewind = math.clamp(player:GetNetworkPing() * 2, 0, MAX_REWIND)
 	local hitBall: Part? = nil
 	local hitDistance = Config.RIFLE_RANGE
 	for _, child in ballsFolder:GetChildren() do
 		local ball = child :: Part
-		local toBall = ball.Position - origin
-		local along = toBall:Dot(direction)
-		if along > 0 and along < hitDistance and not ball.Anchored then
-			local miss = (toBall - direction * along).Magnitude
-			if miss <= D / 2 + Config.RIFLE_HIT_TOLERANCE then
-				hitBall, hitDistance = ball, along
+		if not ball.Anchored then
+			for _, position in { ball.Position, ball.Position - ball.AssemblyLinearVelocity * rewind } do
+				local toBall = position - origin
+				local along = toBall:Dot(direction)
+				if along > 0 and along < hitDistance then
+					local miss = (toBall - direction * along).Magnitude
+					if miss <= D / 2 + Config.RIFLE_HIT_TOLERANCE then
+						hitBall, hitDistance = ball, along
+					end
+				end
 			end
 		end
 	end
@@ -196,16 +230,35 @@ local function rifleShot(player: Player, root: BasePart, target: Vector3)
 	end
 end
 
-local function removeOldestBonus()
-	local oldest: Part? = nil
-	for ball, expiry in bonusExpiry do
-		if not oldest or expiry < bonusExpiry[oldest] then
-			oldest = ball
+-- 보너스 공이 최대 개수에 도달했으면 가장 오래된 것부터 제거
+local function makeRoomForBonus()
+	while #ballsFolder:GetChildren() - 1 >= Config.MAX_BONUS_BALLS do
+		local oldest: Part? = nil
+		for ball, expiry in bonusExpiry do
+			if not oldest or expiry < bonusExpiry[oldest] then
+				oldest = ball
+			end
 		end
-	end
-	if oldest then
+		if not oldest then
+			return
+		end
 		destroyBall(oldest)
 	end
+end
+
+local function blastEffect(position: Vector3, radius: number)
+	local blast = Instance.new("Explosion")
+	blast.Position = position
+	blast.BlastRadius = radius
+	blast.BlastPressure = 0
+	blast.DestroyJointRadiusPercent = 0
+	blast.Parent = workspace
+end
+
+-- start 에서 출발해 flight 초 뒤 landing 에 도착하는 포물선 초기 속도
+-- (start + v·t - ½g·t² = landing)
+local function launchVelocity(start: Vector3, landing: Vector3, flight: number): Vector3
+	return (landing - start) / flight + Vector3.new(0, 0.5 * workspace.Gravity * flight, 0)
 end
 
 -- 전차병: 포탄 한 발 → 보너스 공 여러 개가 조준 지점 주변으로 포물선을 그리며 떨어진다
@@ -222,19 +275,11 @@ local function tankShot(player: Player, root: BasePart, target: Vector3)
 	end
 	local aimPoint = Vector3.new(root.Position.X, D / 2, root.Position.Z) + horizontal
 
-	local blast = Instance.new("Explosion")
-	blast.Position = origin
-	blast.BlastRadius = 4
-	blast.BlastPressure = 0
-	blast.DestroyJointRadiusPercent = 0
-	blast.Parent = workspace
+	blastEffect(origin, 4)
 
-	local gravity = workspace.Gravity
 	local right = forward:Cross(Vector3.yAxis)
 	for i = 1, Config.TANK_BALLS do
-		while #ballsFolder:GetChildren() - 1 >= Config.MAX_BONUS_BALLS do
-			removeOldestBonus()
-		end
+		makeRoomForBonus()
 
 		local angle = math.random() * math.pi * 2
 		local radius = math.sqrt(math.random()) * Config.TANK_SPREAD
@@ -245,14 +290,63 @@ local function tankShot(player: Player, root: BasePart, target: Vector3)
 		local flight =
 			math.clamp(distance * Config.TANK_FLIGHT_PER_STUD, Config.TANK_MIN_FLIGHT, Config.TANK_MAX_FLIGHT)
 
-		local ball = makeBall(true)
+		local ball = makeBall("bonus")
 		ball.Position = start
 		ball:SetNetworkOwner(nil)
-		-- 포물선: start + v·t - ½g·t² 가 flight 초 뒤 landing 에 도달하도록 초기 속도 계산
-		ball.AssemblyLinearVelocity = (landing - start) / flight + Vector3.new(0, 0.5 * gravity * flight, 0)
+		ball.AssemblyLinearVelocity = launchVelocity(start, landing, flight)
 		bonusExpiry[ball] = os.clock() + Config.BONUS_BALL_LIFETIME
 		lastToucher[ball] = player
 	end
+end
+
+-- 골키퍼: 오래 충전(이동 불가)한 뒤 상대 골문으로 스페셜 슛.
+-- 스페셜 공은 모든 선수를 통과하므로 상대 소총수 사격이나 전차 포탄 공으로만 막을 수 있다.
+local function specialShot(player: Player)
+	local key = PlayerService.teamKeyOf(player)
+	local character = player.Character
+	if charging[player] or not key or not character then
+		return
+	end
+	local team = Config.Teams[key]
+	local chargeRound = round
+	charging[player] = true
+	PlayerService.setRooted(player, true)
+
+	local glow = Instance.new("Highlight")
+	glow.FillColor = team.Color.Color
+	glow.OutlineColor = Color3.new(1, 1, 1)
+	glow.FillTransparency = 0.3
+	glow.Parent = character
+	announceEvent:FireAllClients(
+		string.format("%s 골키퍼 스페셜 슛 충전 중! 소총수·전차병 대비!", team.Name),
+		Config.SPECIAL_CHARGE_TIME
+	)
+
+	task.wait(Config.SPECIAL_CHARGE_TIME)
+
+	glow:Destroy()
+	charging[player] = nil
+	PlayerService.setRooted(player, false)
+	local root = aliveRoot(player)
+	if chargeRound ~= round or not enabled or not root or PlayerService.classOf(player) ~= "Goalkeeper" then
+		return
+	end
+
+	-- 상대 골대 쪽 = -side. 골문 안쪽 낮은 곳을 노린다
+	local start = root.Position + Vector3.new(-team.Side * 4, 3, 0)
+	local landing = Vector3.new(
+		-team.Side * (L / 2 + Config.GOAL_DEPTH / 2),
+		Config.GOAL_HEIGHT / 3,
+		(math.random() * 2 - 1) * (Config.GOAL_WIDTH / 2 - 4)
+	)
+	makeRoomForBonus()
+	blastEffect(start, 6)
+	local ball = makeBall("special")
+	ball.Position = start
+	ball:SetNetworkOwner(nil)
+	ball.AssemblyLinearVelocity = launchVelocity(start, landing, Config.SPECIAL_FLIGHT_TIME)
+	bonusExpiry[ball] = os.clock() + Config.SPECIAL_LIFETIME
+	lastToucher[ball] = player
 end
 
 local function onAbility(player: Player, target: unknown)
@@ -269,6 +363,8 @@ local function onAbility(player: Player, target: unknown)
 	end
 	if class == "Tank" then
 		tankShot(player, root, target :: Vector3)
+	elseif class == "Goalkeeper" then
+		task.spawn(specialShot, player)
 	else
 		rifleShot(player, root, target :: Vector3)
 	end
@@ -276,7 +372,8 @@ end
 
 function BallService.init(field: Folder, net: Folder)
 	ballsFolder = field:WaitForChild("Balls") :: Folder
-	mainBall = makeBall(false)
+	announceEvent = net:WaitForChild("Announce") :: RemoteEvent
+	mainBall = makeBall("main")
 	BallService.reset()
 
 	local kick = net:WaitForChild("Kick") :: RemoteEvent
@@ -295,9 +392,10 @@ local function placeMainAtCenter()
 	lastToucher[mainBall] = nil
 end
 
--- 킥오프 준비: 보너스 공 제거, 메인 공을 중앙에 고정, 조작 비활성화
+-- 킥오프 준비: 보너스/스페셜 공 제거, 메인 공을 중앙에 고정, 조작 비활성화
 function BallService.reset()
 	enabled = false
+	round += 1
 	for ball in bonusExpiry do
 		destroyBall(ball)
 	end
@@ -327,6 +425,7 @@ function BallService.step(): { BallEvent }
 			table.insert(events, {
 				kind = "goal",
 				isMain = isMain,
+				ballKind = ballKind[ball],
 				side = if p.X < 0 then -1 else 1,
 				scorer = lastToucher[ball],
 			})
@@ -343,7 +442,7 @@ function BallService.step(): { BallEvent }
 		then
 			if isMain then
 				placeMainAtCenter()
-				table.insert(events, { kind = "out", isMain = true })
+				table.insert(events, { kind = "out", isMain = true, ballKind = "main" })
 			else
 				destroyBall(ball)
 			end
