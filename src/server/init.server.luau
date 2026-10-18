@@ -6,12 +6,12 @@ local BallService = require(script.BallService)
 local FieldBuilder = require(script.FieldBuilder)
 local MatchService = require(script.MatchService)
 local PlayerService = require(script.PlayerService)
-local ZoneService = require(script.ZoneService)
+local ShuttleService = require(script.ShuttleService)
 
 -- 원격 이벤트 + 경기 상태(속성)를 담는 폴더
 local net = Instance.new("Folder")
 net.Name = Config.NET_FOLDER
-for _, name in { "Kick", "Ability", "ChooseClass", "Announce" } do
+for _, name in { "Kick", "ChooseSport", "Announce" } do
 	local remote = Instance.new("RemoteEvent")
 	remote.Name = name
 	remote.Parent = net
@@ -25,6 +25,6 @@ net.Parent = ReplicatedStorage
 
 local field = FieldBuilder.build()
 PlayerService.init(net)
-ZoneService.init(field)
 BallService.init(field, net)
+ShuttleService.init(field)
 MatchService.run(net)

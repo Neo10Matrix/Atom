@@ -1,9 +1,10 @@
--- 팀 배정, 병과(소총수/전차병) 선택, 헬멧, 리더보드, 킥오프 배치/정지 처리
+-- 팀 배정, 종목 선택(축구/배드민턴), 헬멧, 리더보드, 킥오프 배치/정지 처리
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local CollisionGroups = require(script.Parent.CollisionGroups)
 
 local DEFAULT_JUMP_HEIGHT = 7.2
 local DEFAULT_JUMP_POWER = 50
@@ -12,7 +13,6 @@ local PlayerService = {}
 PlayerService.teams = {} :: { [string]: Team }
 
 local frozen = false
-local rooted: { [Player]: boolean? } = {} -- 골키퍼 스페셜 슛 충전 중
 
 local function teamKeyOf(player: Player): string?
 	return player.Team and player.Team:GetAttribute("Key")
@@ -37,17 +37,24 @@ local function smallestTeam(exclude: Player?): Team
 	return best :: Team
 end
 
-function PlayerService.classOf(player: Player): string
-	return player:GetAttribute("Class") or Config.DEFAULT_CLASS
+function PlayerService.sportOf(player: Player): string
+	return player:GetAttribute("Sport") or Config.DEFAULT_SPORT
 end
 
-local function applyMovement(humanoid: Humanoid, player: Player)
-	if frozen or rooted[player] then
+local function applySportGroup(player: Player)
+	local character = player.Character
+	if character then
+		CollisionGroups.applyToCharacter(character, CollisionGroups.Players[PlayerService.sportOf(player)])
+	end
+end
+
+local function applyMovement(humanoid: Humanoid)
+	if frozen then
 		humanoid.WalkSpeed = 0
 		humanoid.JumpHeight = 0
 		humanoid.JumpPower = 0
 	else
-		humanoid.WalkSpeed = Config.Classes[PlayerService.classOf(player)].WalkSpeed
+		humanoid.WalkSpeed = Config.WALK_SPEED
 		humanoid.JumpHeight = DEFAULT_JUMP_HEIGHT
 		humanoid.JumpPower = DEFAULT_JUMP_POWER
 	end
@@ -83,8 +90,9 @@ end
 local function onCharacter(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 5) :: Humanoid?
 	if humanoid then
-		applyMovement(humanoid, player)
+		applyMovement(humanoid)
 	end
+	applySportGroup(player)
 
 	-- 아바타 외형이 로드되면서 머리가 교체되면 먼저 붙인 헬멧이 떨어지므로 로드를 기다린다
 	local deadline = os.clock() + 5
@@ -109,12 +117,12 @@ end
 
 local function onPlayerAdded(player: Player)
 	player.Team = smallestTeam()
-	player:SetAttribute("Class", Config.DEFAULT_CLASS)
+	player:SetAttribute("Sport", Config.DEFAULT_SPORT)
 
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	local goals = Instance.new("IntValue")
-	goals.Name = "골"
+	goals.Name = "득점"
 	goals.Parent = leaderstats
 	leaderstats.Parent = player
 
@@ -126,47 +134,17 @@ local function onPlayerAdded(player: Player)
 	end
 end
 
-local function countClass(team: Team, class: string, exclude: Player): number
-	local count = 0
-	for _, p in team:GetPlayers() do
-		if p ~= exclude and PlayerService.classOf(p) == class then
-			count += 1
-		end
-	end
-	return count
-end
-
--- 골키퍼 위치: 자기 골대 바로 앞
-local function keeperCFrame(side: number): CFrame
-	local position = Vector3.new(side * (Config.FIELD_LENGTH / 2 - 6), 4, 0)
-	return CFrame.lookAt(position, Vector3.new(0, 4, 0))
-end
-
-local function onChooseClass(player: Player, class: unknown)
-	if typeof(class) ~= "string" or not Config.Classes[class] or rooted[player] then
+local function onChooseSport(player: Player, sport: unknown)
+	if typeof(sport) ~= "string" or not Config.Sports[sport] then
 		return
 	end
-	if PlayerService.classOf(player) == class then
-		return
-	end
-	local maxPerTeam = Config.Classes[class].MaxPerTeam
-	if maxPerTeam and player.Team and countClass(player.Team, class, player) >= maxPerTeam then
-		return
-	end
-	player:SetAttribute("Class", class)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		applyMovement(humanoid, player)
-	end
-	-- 골키퍼는 골키퍼 구역 안에서만 움직이므로 바로 골대 앞으로 보낸다
-	local key = teamKeyOf(player)
-	if class == "Goalkeeper" and character and key then
-		character:PivotTo(keeperCFrame(Config.Teams[key].Side))
-	end
+	player:SetAttribute("Sport", sport)
+	applySportGroup(player)
 end
 
 function PlayerService.init(net: Folder)
+	CollisionGroups.setup()
+
 	for _, key in Config.TEAM_ORDER do
 		local info = Config.Teams[key]
 		local team = Instance.new("Team")
@@ -179,57 +157,49 @@ function PlayerService.init(net: Folder)
 	end
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
-	Players.PlayerRemoving:Connect(function(player)
-		rooted[player] = nil
-	end)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
 
-	local chooseClass = net:WaitForChild("ChooseClass") :: RemoteEvent
-	chooseClass.OnServerEvent:Connect(onChooseClass)
+	local chooseSport = net:WaitForChild("ChooseSport") :: RemoteEvent
+	chooseSport.OnServerEvent:Connect(onChooseSport)
 end
 
-function PlayerService.addGoal(player: Player)
+function PlayerService.addPoint(player: Player)
 	local leaderstats = player:FindFirstChild("leaderstats")
-	local goals = leaderstats and leaderstats:FindFirstChild("골") :: IntValue?
+	local goals = leaderstats and leaderstats:FindFirstChild("득점") :: IntValue?
 	if goals then
 		goals.Value += 1
 	end
 end
 
 -- 킥오프 대형: 각 팀을 자기 진영에 세로로 정렬
+-- 축구 선수는 진영 중간, 배드민턴 선수는 네트 가까이
+local SPORT_LINE_X = {
+	Soccer = Config.FIELD_LENGTH / 4,
+	Badminton = 25,
+}
+
 function PlayerService.positionPlayers()
 	for _, key in Config.TEAM_ORDER do
 		local side = Config.Teams[key].Side
-		local members = {}
-		for _, player in PlayerService.teams[key]:GetPlayers() do
-			local character = player.Character
-			if PlayerService.classOf(player) == "Goalkeeper" then
-				if character and character:FindFirstChild("HumanoidRootPart") then
-					character:PivotTo(keeperCFrame(side))
+		for _, sport in Config.SPORT_ORDER do
+			local members = {}
+			for _, player in PlayerService.teams[key]:GetPlayers() do
+				if PlayerService.sportOf(player) == sport then
+					table.insert(members, player)
 				end
-			else
-				table.insert(members, player)
+			end
+			local spacing = math.min(16, (Config.FIELD_WIDTH - 20) / math.max(#members, 1))
+			for i, player in members do
+				local character = player.Character
+				if character and character:FindFirstChild("HumanoidRootPart") then
+					local z = (i - (#members + 1) / 2) * spacing
+					local position = Vector3.new(side * SPORT_LINE_X[sport], 4, z)
+					character:PivotTo(CFrame.lookAt(position, Vector3.new(0, 4, z)))
+				end
 			end
 		end
-		local spacing = math.min(12, (Config.FIELD_WIDTH - 20) / math.max(#members, 1))
-		for i, player in members do
-			local character = player.Character
-			if character and character:FindFirstChild("HumanoidRootPart") then
-				local z = (i - (#members + 1) / 2) * spacing
-				local position = Vector3.new(side * Config.FIELD_LENGTH / 4, 4, z)
-				character:PivotTo(CFrame.lookAt(position, Vector3.new(0, 4, z)))
-			end
-		end
-	end
-end
-
-function PlayerService.setRooted(player: Player, value: boolean)
-	rooted[player] = if value then true else nil
-	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		applyMovement(humanoid, player)
 	end
 end
 
@@ -238,7 +208,7 @@ function PlayerService.setFrozen(value: boolean)
 	for _, player in Players:GetPlayers() do
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			applyMovement(humanoid, player)
+			applyMovement(humanoid)
 		end
 	end
 end

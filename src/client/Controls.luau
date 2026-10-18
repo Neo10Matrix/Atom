@@ -1,24 +1,22 @@
--- 입력: 킥(차징), 병과 스킬(사격/포격 조준), 돌격 대시
+-- 입력: 킥(차징, 축구 선수만), 돌격 대시
+-- 배드민턴 헤딩은 키 입력 없이 머리에 셔틀콕이 닿으면 서버가 처리한다
 local ContextActionService = game:GetService("ContextActionService")
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local player = Players.LocalPlayer
 local net = ReplicatedStorage:WaitForChild(Config.NET_FOLDER) :: Folder
 local kickEvent = net:WaitForChild("Kick") :: RemoteEvent
-local abilityEvent = net:WaitForChild("Ability") :: RemoteEvent
 
 local Controls = {}
 
 local hud
 
 local chargeStart: number? = nil
-local lastAbility = -math.huge
 local lastDash = -math.huge
 
 local function aliveCharacter(): (Humanoid?, BasePart?)
@@ -31,28 +29,11 @@ local function aliveCharacter(): (Humanoid?, BasePart?)
 	return humanoid, root
 end
 
-local function abilityCooldown(): number
-	local class = player:GetAttribute("Class") or Config.DEFAULT_CLASS
-	return Config.Classes[class].Cooldown
-end
-
--- 마우스 위치(터치/패드는 화면 중앙) 기준으로 월드 조준 지점을 구한다
-local function aimPoint(inputObject: InputObject): Vector3
-	local camera = workspace.CurrentCamera
-	local screenPoint = if inputObject.UserInputType == Enum.UserInputType.MouseButton1
-			or inputObject.UserInputType == Enum.UserInputType.Keyboard
-		then UserInputService:GetMouseLocation()
-		else camera.ViewportSize / 2
-	local ray = camera:ViewportPointToRay(screenPoint.X, screenPoint.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { player.Character :: Instance }
-	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-	return if result then result.Position else ray.Origin + ray.Direction * 300
-end
-
 -- 킥이 안 되는 이유 (없으면 nil). 서버도 같은 조건을 다시 검사한다
 local function kickBlockReason(): string?
+	if (player:GetAttribute("Sport") or Config.DEFAULT_SPORT) ~= "Soccer" then
+		return "축구 선수만 찰 수 있어요 (배드민턴은 헤딩!)"
+	end
 	if net:GetAttribute("Phase") ~= "Playing" then
 		return "킥오프 전에는 찰 수 없어요"
 	end
@@ -63,11 +44,7 @@ local function kickBlockReason(): string?
 		return nil
 	end
 	for _, ball in balls:GetChildren() do
-		if
-			ball:IsA("BasePart")
-			and ball.Name ~= "SpecialBall"
-			and (ball.Position - root.Position).Magnitude <= Config.KICK_RANGE
-		then
+		if ball:IsA("BasePart") and (ball.Position - root.Position).Magnitude <= Config.KICK_RANGE then
 			return nil
 		end
 	end
@@ -90,22 +67,6 @@ local function onKick(_, inputState: Enum.UserInputState)
 			end
 		end
 	end
-	return Enum.ContextActionResult.Sink
-end
-
-local function onAbility(_, inputState: Enum.UserInputState, inputObject: InputObject)
-	if inputState ~= Enum.UserInputState.Begin then
-		return Enum.ContextActionResult.Pass
-	end
-	local now = os.clock()
-	if now - lastAbility < abilityCooldown() or not aliveCharacter() then
-		return Enum.ContextActionResult.Pass
-	end
-	if net:GetAttribute("Phase") ~= "Playing" then
-		return Enum.ContextActionResult.Pass
-	end
-	lastAbility = now
-	abilityEvent:FireServer(aimPoint(inputObject))
 	return Enum.ContextActionResult.Sink
 end
 
@@ -146,15 +107,6 @@ function Controls.init(hudModule)
 
 	ContextActionService:BindAction("ArmyKick", onKick, true, Enum.KeyCode.E, Enum.KeyCode.ButtonR2)
 	ContextActionService:SetTitle("ArmyKick", "킥")
-	ContextActionService:BindAction(
-		"ArmyAbility",
-		onAbility,
-		true,
-		Enum.UserInputType.MouseButton1,
-		Enum.KeyCode.F,
-		Enum.KeyCode.ButtonR1
-	)
-	ContextActionService:SetTitle("ArmyAbility", "스킬")
 	ContextActionService:BindAction("ArmyDash", onDash, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("ArmyDash", "돌격")
 
@@ -162,7 +114,6 @@ function Controls.init(hudModule)
 		if chargeStart then
 			hud.setCharge(math.clamp((os.clock() - chargeStart) / Config.MAX_CHARGE_TIME, 0, 1))
 		end
-		hud.setAbilityCooldown(math.max(0, abilityCooldown() - (os.clock() - lastAbility)))
 	end)
 end
 

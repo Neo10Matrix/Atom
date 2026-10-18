@@ -1,4 +1,5 @@
--- 경기 흐름: 대기 → 카운트다운 → 경기 → (골 → 킥오프) → 종료
+-- 경기 흐름: 대기 → 카운트다운 → 경기 → (축구 골 → 킥오프) → 종료
+-- 배드민턴 득점은 경기를 멈추지 않고 점수만 올린 뒤 다시 서브한다
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -6,7 +7,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
 local PlayerService = require(script.Parent.PlayerService)
-local ZoneService = require(script.Parent.ZoneService)
+local ShuttleService = require(script.Parent.ShuttleService)
 
 local MatchService = {}
 
@@ -37,8 +38,8 @@ end
 
 local function kickoff()
 	BallService.reset()
+	ShuttleService.reset()
 	PlayerService.positionPlayers()
-	ZoneService.resetAll()
 	PlayerService.setFrozen(true)
 	setPhase("Countdown")
 	for i = Config.COUNTDOWN, 1, -1 do
@@ -48,11 +49,12 @@ local function kickoff()
 	announce("작전 개시!", 1.5)
 	PlayerService.setFrozen(false)
 	BallService.release()
+	ShuttleService.release()
 	setPhase("Playing")
 end
 
--- 골 이벤트 처리. 메인 공 골이면 true (킥오프 필요)
-local function handleGoal(event: BallService.BallEvent): boolean
+-- 골 이벤트 처리: 점수, 리더보드, 안내
+local function handleGoal(event: BallService.BallEvent)
 	-- 공이 들어간 골대의 반대편 팀이 득점
 	local scoringKey = teamKeyForSide(-(event.side :: number))
 	local teamName = Config.Teams[scoringKey].Name
@@ -61,20 +63,30 @@ local function handleGoal(event: BallService.BallEvent): boolean
 	local scorer = event.scorer
 	local text
 	if scorer and scorer.Parent and PlayerService.teamKeyOf(scorer) == scoringKey then
-		PlayerService.addGoal(scorer)
+		PlayerService.addPoint(scorer)
 		text = string.format("골! %s — %s", teamName, scorer.DisplayName)
 	elseif scorer and scorer.Parent then
 		text = string.format("자책골! %s 득점 (%s)", teamName, scorer.DisplayName)
 	else
 		text = string.format("골! %s", teamName)
 	end
-	if event.ballKind == "bonus" then
-		text ..= " (포탄 공)"
-	elseif event.ballKind == "special" then
-		text ..= " (골키퍼 스페셜 슛!)"
+	announce(text, Config.GOAL_CELEBRATION)
+end
+
+-- 배드민턴 득점 처리: 셔틀콕이 떨어진(또는 반칙한) 진영의 반대편 팀이 득점
+local function handleShuttlePoint(event: ShuttleService.ShuttleEvent)
+	local concedingKey = teamKeyForSide(event.concedingSide)
+	local scoringKey = teamKeyForSide(-event.concedingSide)
+	addScore(scoringKey)
+
+	local scorer = event.scorer
+	if scorer and scorer.Parent and PlayerService.teamKeyOf(scorer) == scoringKey then
+		PlayerService.addPoint(scorer)
 	end
-	announce(text, if event.isMain then Config.GOAL_CELEBRATION else 2)
-	return event.isMain
+	local reason = if event.reason == "fault"
+		then string.format("%s 4번 헤딩 반칙", Config.Teams[concedingKey].Name)
+		else string.format("%s 진영에 떨어짐", Config.Teams[concedingKey].Name)
+	announce(string.format("배드민턴 득점! %s (%s)", Config.Teams[scoringKey].Name, reason), 2)
 end
 
 local function playMatch()
@@ -89,16 +101,21 @@ local function playMatch()
 	kickoff()
 
 	while timeLeft > 0 do
-		timeLeft -= RunService.Heartbeat:Wait()
+		local dt = RunService.Heartbeat:Wait()
+		timeLeft -= dt
 		net:SetAttribute("TimeLeft", math.max(0, math.ceil(timeLeft)))
 
 		local needKickoff = false
 		for _, event in BallService.step() do
 			if event.kind == "out" then
 				announce("공이 작전 지역을 벗어남! 중앙 재배치", 1.5)
-			elseif handleGoal(event) then
+			else
+				handleGoal(event)
 				needKickoff = true
 			end
+		end
+		for _, event in ShuttleService.step(dt) do
+			handleShuttlePoint(event)
 		end
 		if needKickoff then
 			setPhase("Goal")
@@ -108,6 +125,7 @@ local function playMatch()
 	end
 
 	BallService.reset()
+	ShuttleService.reset()
 	setPhase("Ended")
 	local alpha = net:GetAttribute("ScoreAlpha") or 0
 	local bravo = net:GetAttribute("ScoreBravo") or 0

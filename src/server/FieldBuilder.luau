@@ -57,7 +57,7 @@ local function buildLines(parent: Instance)
 	line(parent, CFrame.new(0, 0, 0), 1.5, 1.5)
 
 	-- 페널티 박스
-	local boxDepth, boxWidth = Config.KEEPER_BOX_DEPTH, Config.KEEPER_BOX_WIDTH
+	local boxDepth, boxWidth = Config.PENALTY_BOX_DEPTH, Config.PENALTY_BOX_WIDTH
 	for _, side in { -1, 1 } do
 		local edgeX = side * L / 2
 		local innerX = edgeX - side * boxDepth
@@ -164,7 +164,6 @@ local function buildSpawns(parent: Instance)
 		spawn.Name = key .. "Spawn"
 		spawn.Anchored = true
 		spawn.Size = Vector3.new(12, 0.1, 12)
-		-- 골키퍼 구역 안쪽 (골키퍼가 리스폰해도 구역 밖으로 나가지 않도록)
 		spawn.Position = Vector3.new(info.Side * (L / 2 - 20), 0.05, 0)
 		spawn.Transparency = 1
 		spawn.CanCollide = false
