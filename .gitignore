@@ -3,3 +3,6 @@
 *.rbxl.lock
 *.rbxlx.lock
 sourcemap.json
+# 참고용 경기장 파일은 올릴 수 있게 허용
+!reference/*.rbxl
+!reference/*.rbxlx
