@@ -47,7 +47,7 @@ local function buildLines(parent: Instance)
 	line(parent, CFrame.new(0, 0, 0), t, W)
 
 	-- 센터 서클
-	local radius, segments = 18, 32
+	local radius, segments = math.min(18, W * 0.15), 32
 	local segLength = 2 * math.pi * radius / segments + 0.2
 	for i = 1, segments do
 		local angle = (i / segments) * math.pi * 2
@@ -155,6 +155,32 @@ local function buildWalls(parent: Instance)
 	end
 	-- 천장 (공이 경기장 밖으로 날아가지 않도록)
 	wall(Vector3.new(L + 4, 2, W + 4), Vector3.new(0, WH + 1, 0))
+
+	-- 눈에 보이는 유리벽 (플러그인 경기장 스타일). 충돌은 위의 투명 벽이 담당한다
+	local GH2 = Config.GLASS_WALL_HEIGHT
+	local glassProps = {
+		Name = "GlassWall",
+		Color = Color3.fromRGB(170, 210, 230),
+		Material = Enum.Material.Glass,
+		Transparency = 0.6,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+	}
+	local function glass(size: Vector3, position: Vector3)
+		local p = part(walls, glassProps)
+		p.Size = size
+		p.Position = position
+	end
+	for _, zSign in { -1, 1 } do
+		glass(Vector3.new(L + 2, GH2, 0.5), Vector3.new(0, GH2 / 2, zSign * (W / 2 + 0.25)))
+	end
+	local glassSeg = W / 2 - GW / 2 - 1
+	for _, side in { -1, 1 } do
+		for _, zSign in { -1, 1 } do
+			glass(Vector3.new(0.5, GH2, glassSeg), Vector3.new(side * (L / 2 + 0.25), GH2 / 2, zSign * (GW / 2 + 1 + glassSeg / 2)))
+		end
+	end
 end
 
 local function buildSpawns(parent: Instance)
@@ -176,6 +202,85 @@ local function buildSpawns(parent: Instance)
 	end
 end
 
+-- 양쪽 터치라인 밖 계단식 관중석과 알록달록한 관중 (플러그인 경기장 스타일)
+local function buildStands(parent: Instance)
+	local stands = Instance.new("Folder")
+	stands.Name = "Stands"
+	stands.Parent = parent
+
+	local rng = Random.new(7)
+	local skin = { Color3.fromRGB(255, 220, 180), Color3.fromRGB(224, 172, 105), Color3.fromRGB(141, 85, 36) }
+	for _, zSign in { -1, 1 } do
+		for row = 1, Config.STAND_ROWS do
+			local stepTop = row * 1.5
+			local z = zSign * (W / 2 + 2 + row * 3)
+			part(stands, {
+				Name = "Step",
+				Size = Vector3.new(L, stepTop, 3),
+				Position = Vector3.new(0, stepTop / 2, z),
+				Color = Color3.fromRGB(90, 95, 80),
+				Material = Enum.Material.Concrete,
+				CanQuery = false,
+			})
+			for x = -L / 2 + 3, L / 2 - 3, 4 do
+				local jitter = rng:NextNumber(-0.6, 0.6)
+				part(stands, {
+					Name = "FanBody",
+					Size = Vector3.new(1.4, 2, 1),
+					Position = Vector3.new(x + jitter, stepTop + 1, z),
+					Color = Color3.fromHSV(rng:NextNumber(), rng:NextNumber(0.4, 0.9), rng:NextNumber(0.5, 1)),
+					CanCollide = false,
+					CanQuery = false,
+				})
+				part(stands, {
+					Name = "FanHead",
+					Size = Vector3.new(1, 1, 1),
+					Position = Vector3.new(x + jitter, stepTop + 2.5, z),
+					Color = skin[rng:NextInteger(1, #skin)],
+					CanCollide = false,
+					CanQuery = false,
+				})
+			end
+		end
+	end
+end
+
+local scoreLabel: TextLabel? = nil
+
+-- 경기장 위 대형 점수판 (플러그인 경기장의 Scoreboard 처럼)
+local function buildScoreboard(parent: Instance)
+	local anchor = part(parent, {
+		Name = "Scoreboard",
+		Size = Vector3.new(1, 1, 1),
+		Position = Vector3.new(0, Config.SERVE_HEIGHT + 25, 0),
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+	})
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.new(40, 0, 8, 0)
+	gui.LightInfluence = 0
+	gui.MaxDistance = 1000
+	gui.Parent = anchor
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundColor3 = Color3.fromRGB(30, 35, 25)
+	label.BackgroundTransparency = 0.2
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBlack
+	label.Text = "아미사커"
+	label.Parent = gui
+	scoreLabel = label
+end
+
+function FieldBuilder.setScoreboard(text: string)
+	if scoreLabel then
+		scoreLabel.Text = text
+	end
+end
+
 local function buildDecorations(parent: Instance)
 	local deco = Instance.new("Folder")
 	deco.Name = "Decorations"
@@ -189,7 +294,7 @@ local function buildDecorations(parent: Instance)
 		Material = Enum.Material.Fabric,
 		CanQuery = false,
 	}
-	local offset = 6
+	local offset = 6 + Config.STAND_ROWS * 3 -- 관중석 바깥
 	local function sandbagRow(from: Vector3, to: Vector3)
 		local length = (to - from).Magnitude
 		local direction = (to - from).Unit
@@ -201,8 +306,6 @@ local function buildDecorations(parent: Instance)
 		end
 	end
 	local hx, hz = L / 2 + GD + offset, W / 2 + offset
-	sandbagRow(Vector3.new(-hx, 0, hz), Vector3.new(hx, 0, hz))
-	sandbagRow(Vector3.new(-hx, 0, -hz), Vector3.new(hx, 0, -hz))
 	sandbagRow(Vector3.new(hx, 0, -hz), Vector3.new(hx, 0, hz))
 	sandbagRow(Vector3.new(-hx, 0, -hz), Vector3.new(-hx, 0, hz))
 
@@ -277,6 +380,8 @@ function FieldBuilder.build(): Folder
 	end
 	buildWalls(field)
 	buildSpawns(field)
+	buildStands(field)
+	buildScoreboard(field)
 	buildDecorations(field)
 
 	local balls = Instance.new("Folder")

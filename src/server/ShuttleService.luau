@@ -16,7 +16,7 @@ local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
 local SD = Config.SHUTTLE_DIAMETER
 local MAX_TOUCHES = 3
-local SERVE_X = 30 -- 서브 때 네트에서 떨어진 거리
+local SERVE_X = L / 4 -- 서브 때 네트에서 떨어진 거리
 local STUCK_TIME = 1.5 -- 땅이 아닌 곳에 멈춰 있어도 이 시간이 지나면 떨어진 것으로 본다
 
 -- 헤딩 횟수별 색 (3번째 = 빨강)

@@ -14,7 +14,7 @@ local ShuttleService = require(script.Parent.ShuttleService)
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
 local THINK_INTERVAL = 0.1
-local SHOOT_DISTANCE = 45 -- 상대 골대와 이만큼 가까워지면 슛
+local SHOOT_DISTANCE = L * 0.3 -- 상대 골대와 이만큼 가까워지면 슛
 local HEAD_HEIGHT = 6 -- 셔틀콕을 받을 높이 (지면 기준)
 
 local BotService = {}

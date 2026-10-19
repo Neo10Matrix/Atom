@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
 local BotService = require(script.Parent.BotService)
+local FieldBuilder = require(script.Parent.FieldBuilder)
 local PlayerService = require(script.Parent.PlayerService)
 local ShuttleService = require(script.Parent.ShuttleService)
 
@@ -159,6 +160,22 @@ function MatchService.run(netFolder: Folder)
 	announceEvent = net:WaitForChild("Announce") :: RemoteEvent
 	local minPlayers = if RunService:IsStudio() then 1 else Config.MIN_PLAYERS
 	net:SetAttribute("MinPlayers", minPlayers)
+
+	-- 경기장 위 대형 점수판 갱신
+	local function refreshScoreboard()
+		local timeLeft = net:GetAttribute("TimeLeft") or 0
+		FieldBuilder.setScoreboard(string.format(
+			"%s %d : %d %s   %02d:%02d",
+			Config.Teams.Alpha.Name,
+			net:GetAttribute("ScoreAlpha") or 0,
+			net:GetAttribute("ScoreBravo") or 0,
+			Config.Teams.Bravo.Name,
+			timeLeft // 60,
+			timeLeft % 60
+		))
+	end
+	net.AttributeChanged:Connect(refreshScoreboard)
+	refreshScoreboard()
 
 	while true do
 		setPhase("Waiting")
