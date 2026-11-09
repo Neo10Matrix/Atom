@@ -204,6 +204,21 @@ function BallService.dropFor(player: Actor)
 	end
 end
 
+-- 총알·로켓 폭발에 맞으면 호출: 드리블 중이던 공은 소유권이 풀리고 궤적이 바뀐다
+function BallService.push(ball: Part, impulse: Vector3, shooter: Actor)
+	if not enabled or not table.find(balls, ball) then
+		return
+	end
+	local possession = owner[ball]
+	if possession then
+		-- 맞아서 튕겨 나간 공이 바로 다시 발에 붙지 않도록
+		regrabAt[possession.player] = os.clock() + KICK_REGRAB_DELAY
+	end
+	release(ball)
+	ball.AssemblyLinearVelocity += impulse
+	lastToucher[ball] = shooter
+end
+
 -- 공을 잡을 수 있는 선수인지 (헤딩 직후·킥 직후·공중볼이면 불가)
 local function canGrab(actor: Actor, ball: Part, now: number): boolean
 	return enabled

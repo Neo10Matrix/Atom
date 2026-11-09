@@ -273,6 +273,15 @@ function ShuttleService.getActive(): { Part }
 	return result
 end
 
+-- 총알·로켓 폭발에 맞으면 호출: 궤적만 바뀌고 헤딩 횟수에는 들어가지 않는다
+function ShuttleService.push(cork: BasePart, impulse: Vector3)
+	for _, s in shuttles do
+		if s.cork == cork and s.enabled then
+			cork.AssemblyLinearVelocity += impulse * Config.SHUTTLE_PUSH_SCALE
+		end
+	end
+end
+
 -- 매 프레임 호출: 공기 저항, 네트 넘김, 착지 판정, 다음 서브. 발생한 득점 이벤트를 돌려준다
 function ShuttleService.step(dt: number): { ShuttleEvent }
 	local now = os.clock()

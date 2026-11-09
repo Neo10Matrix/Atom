@@ -17,6 +17,8 @@ local chargeFill: Frame
 local hintLabel: TextLabel
 local hintToken = 0
 local chargeFrame: Frame
+local weaponLabel: TextLabel
+local weaponFill: Frame
 
 local function make(className: string, props: { [string]: any }, children: { Instance }?): any
 	local instance = Instance.new(className)
@@ -150,6 +152,32 @@ function HUD.init()
 		Parent = chargeFrame,
 	}, { corner(7) })
 
+	-- 지금 고른 무기와 재장전 게이지 (오른쪽 위, 모바일 버튼과 겹치지 않게)
+	local weaponFrame = make("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 72),
+		Size = UDim2.new(0, 190, 0, 52),
+		BackgroundColor3 = OLIVE,
+		BackgroundTransparency = 0.2,
+		Parent = gui,
+	}, { corner(8) })
+	weaponLabel = label({
+		Position = UDim2.new(0, 8, 0, 4),
+		Size = UDim2.new(1, -16, 0, 26),
+		Parent = weaponFrame,
+	})
+	local weaponBar = make("Frame", {
+		Position = UDim2.new(0, 8, 1, -16),
+		Size = UDim2.new(1, -16, 0, 8),
+		BackgroundColor3 = Color3.fromRGB(25, 30, 18),
+		Parent = weaponFrame,
+	}, { corner(4) })
+	weaponFill = make("Frame", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(230, 170, 60),
+		Parent = weaponBar,
+	}, { corner(4) })
+
 	-- 짧은 안내 (킥 실패 이유 등)
 	hintLabel = label({
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -165,7 +193,7 @@ function HUD.init()
 	local panel = make("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 10, 1, -10),
-		Size = UDim2.new(0, 290, 0, 78),
+		Size = UDim2.new(0, 290, 0, 96),
 		BackgroundColor3 = OLIVE,
 		BackgroundTransparency = 0.2,
 		Parent = gui,
@@ -176,7 +204,7 @@ function HUD.init()
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n드리블 중 헤딩하면 공을 놓쳐요  |  Q: 돌격",
+		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n드리블 중 헤딩하면 공을 놓쳐요  |  Q: 돌격\n🔫 클릭: 사격 (공만 맞음)  |  1/2/3·R: 무기 바꾸기",
 		Parent = panel,
 	})
 
@@ -227,6 +255,13 @@ function HUD.flash(text: string)
 			hintLabel.Visible = false
 		end
 	end)
+end
+
+-- 무기 표시: 이름, 번호, 재장전 정도 (1 = 쏠 수 있음)
+function HUD.setWeapon(name: string, index: number, ready: number)
+	weaponLabel.Text = string.format("%d. %s", index, name)
+	weaponFill.Size = UDim2.new(ready, 0, 1, 0)
+	weaponFill.BackgroundColor3 = if ready >= 1 then Color3.fromRGB(120, 200, 90) else Color3.fromRGB(230, 170, 60)
 end
 
 function HUD.setCharge(alpha: number)

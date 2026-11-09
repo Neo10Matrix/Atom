@@ -63,6 +63,18 @@ Config.HEADER_FORWARD_SPEED = 28
 Config.HEADER_COOLDOWN = 0.3
 Config.NET_HEIGHT = 18 -- 가운데 반투명 네트 높이
 
+-- 무기: 누구나 소총·저격총·로켓탄을 쓸 수 있다 (1/2/3 또는 R 로 바꾸고 클릭으로 사격)
+-- 사람은 맞지 않고, 축구공·셔틀콕의 궤적만 바뀐다. 드리블 중인 공을 맞히면 소유권이 풀린다
+-- Push = 명중한 공에 더해지는 속도
+Config.Weapons = {
+	Rifle = { Name = "소총", Cooldown = 0.25, Range = 150, Push = 12 },
+	Sniper = { Name = "저격총", Cooldown = 2, Range = 400, Push = 45 },
+	-- 로켓탄은 날아가는 탄이고, 터지면 Radius 안의 공을 바깥쪽으로 밀어낸다 (가까울수록 세게)
+	Rocket = { Name = "로켓탄", Cooldown = 4, Range = 200, Push = 60, Speed = 90, Radius = 14 },
+}
+Config.WEAPON_ORDER = { "Rifle", "Sniper", "Rocket" }
+Config.SHUTTLE_PUSH_SCALE = 0.6 -- 셔틀콕은 공보다 덜 밀린다
+
 -- 테스트용 봇: 킥오프 때마다 각 팀을 이 인원까지 봇으로 채운다 (실제 플레이어가 오면 그만큼 빠짐)
 Config.BOTS_ENABLED = true
 Config.BOT_TEAM_SIZE = 4
