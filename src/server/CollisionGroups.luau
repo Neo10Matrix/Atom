@@ -1,6 +1,7 @@
 -- 충돌 그룹
 -- * 가운데 네트는 셔틀콕만 막는다 (선수·축구공은 통과)
 -- * 드리블 중인 축구공은 선수 몸과 부딪히지 않는다 (공 위에 올라타지 않도록)
+-- * 전쟁 모드: 배구공도 Shuttle 그룹이라 네트에 막힌다. 농구 링·백보드는 농구공만 막는다
 local PhysicsService = game:GetService("PhysicsService")
 
 local CollisionGroups = {
@@ -9,11 +10,13 @@ local CollisionGroups = {
 	Shuttle = "Shuttle",
 	Net = "BadmintonNet",
 	Characters = "Characters",
+	Hoop = "Hoop",
+	Basketball = "Basketball",
 }
 
 function CollisionGroups.setup()
 	local G = CollisionGroups
-	local all = { "Default", G.SoccerBall, G.DribbledBall, G.Shuttle, G.Net, G.Characters }
+	local all = { "Default", G.SoccerBall, G.DribbledBall, G.Shuttle, G.Net, G.Characters, G.Hoop, G.Basketball }
 	for _, name in all do
 		if name ~= "Default" and not PhysicsService:IsCollisionGroupRegistered(name) then
 			PhysicsService:RegisterCollisionGroup(name)
@@ -21,6 +24,7 @@ function CollisionGroups.setup()
 	end
 	for _, other in all do
 		PhysicsService:CollisionGroupSetCollidable(G.Net, other, other == G.Shuttle)
+		PhysicsService:CollisionGroupSetCollidable(G.Hoop, other, other == G.Basketball)
 	end
 	PhysicsService:CollisionGroupSetCollidable(G.DribbledBall, G.Characters, false)
 end

@@ -82,7 +82,12 @@ local function buildNet()
 		p.Parent = net
 	end
 	local h = Config.NET_HEIGHT
-	piece("Mesh", Vector3.new(0.6, h, W), Vector3.new(0, h / 2, 0), Color3.new(1, 1, 1), 0.65)
+	-- 전쟁 모드: 네트를 공중에 띄워서 사람과 축구공이 밑으로 지나간다
+	local bottom = if Config.IS_WAR then Config.NET_BOTTOM else 0
+	piece("Mesh", Vector3.new(0.6, h - bottom, W), Vector3.new(0, (h + bottom) / 2, 0), Color3.new(1, 1, 1), 0.65)
+	if bottom > 0 then
+		piece("BottomTape", Vector3.new(0.8, 0.8, W), Vector3.new(0, bottom, 0), Color3.new(1, 1, 1), 0.1)
+	end
 	piece("Tape", Vector3.new(0.8, 0.8, W), Vector3.new(0, h, 0), Color3.new(1, 1, 1), 0.1)
 	for _, zSign in { -1, 1 } do
 		piece("Post", Vector3.new(1, h + 2, 1), Vector3.new(0, (h + 2) / 2, zSign * (W / 2 - 0.5)), Color3.fromRGB(70, 70, 70), 0)
@@ -135,7 +140,9 @@ local function onTouched(s: Shuttle, hit: BasePart)
 	s.cork.AssemblyLinearVelocity = flat * Config.HEADER_FORWARD_SPEED + Vector3.new(0, Config.HEADER_UP_SPEED, 0)
 end
 
-local function makeShuttle(): Shuttle
+-- 거대 셔틀콕 몸체: 코르크(충돌하는 공) + 깃털(보이기만 함). 항상 세워지고 천천히 떨어진다
+-- 전쟁 모드(WarService)도 같은 몸체를 쓴다
+function ShuttleService.buildBody(parent: Instance): (Part, Part)
 	local cork = Instance.new("Part")
 	cork.Name = "Shuttle"
 	cork.Shape = Enum.PartType.Ball
@@ -179,8 +186,13 @@ local function makeShuttle(): Shuttle
 	lift.ApplyAtCenterOfMass = true
 	lift.Parent = cork
 
-	cork.Parent = field
+	cork.Parent = parent
 	lift.Force = Vector3.new(0, cork.AssemblyMass * workspace.Gravity * (1 - Config.SHUTTLE_GRAVITY_SCALE), 0)
+	return cork, skirt
+end
+
+local function makeShuttle(): Shuttle
+	local cork, skirt = ShuttleService.buildBody(field)
 
 	local s: Shuttle = {
 		cork = cork,

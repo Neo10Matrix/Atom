@@ -174,8 +174,11 @@ end
 function Controls.init(hudModule)
 	hud = hudModule
 
-	ContextActionService:BindAction("ArmyKick", onKick, true, Enum.KeyCode.E, Enum.KeyCode.ButtonR2)
-	ContextActionService:SetTitle("ArmyKick", "킥")
+	-- 전쟁 모드는 공을 총으로만 다루므로 킥이 없다
+	if not Config.IS_WAR then
+		ContextActionService:BindAction("ArmyKick", onKick, true, Enum.KeyCode.E, Enum.KeyCode.ButtonR2)
+		ContextActionService:SetTitle("ArmyKick", "킥")
+	end
 	ContextActionService:BindAction("ArmyDash", onDash, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("ArmyDash", "돌격")
 	-- 사격: 왼쪽 클릭 (마우스 커서 쪽), 게임패드 R1·터치 버튼은 화면 가운데로

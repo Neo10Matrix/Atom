@@ -1,6 +1,11 @@
 -- 아미사커 공용 설정값 (서버/클라이언트 공용)
 local Config = {}
 
+-- 게임 모드
+-- "Classic": 4:4 축구 + 배드민턴 (킥·헤딩·드리블 + 무기)
+-- "War": 전쟁 모드. 5종목 공을 총으로만 다룬다 (킥·헤딩·드리블 없음). 경기장이 더 크고 인원이 많다
+Config.GAME_MODE = "War"
+
 -- 네트워크 / 상태 폴더 이름 (ReplicatedStorage 아래에 서버가 생성)
 Config.NET_FOLDER = "ArmySoccerNet"
 
@@ -66,9 +71,10 @@ Config.NET_HEIGHT = 18 -- 가운데 반투명 네트 높이
 -- 무기: 누구나 소총·저격총·로켓탄을 쓸 수 있다 (1/2/3 또는 R 로 바꾸고 클릭으로 사격)
 -- 사람은 맞지 않고, 축구공·셔틀콕의 궤적만 바뀐다. 드리블 중인 공을 맞히면 소유권이 풀린다
 -- Push = 명중한 공에 더해지는 속도
+-- Lift = 총알 방향에 더하는 위쪽 성분 (땅에 있는 공을 위에서 쏴도 살짝 뜨게)
 Config.Weapons = {
-	Rifle = { Name = "소총", Cooldown = 0.25, Range = 150, Push = 12 },
-	Sniper = { Name = "저격총", Cooldown = 2, Range = 400, Push = 45 },
+	Rifle = { Name = "소총", Cooldown = 0.25, Range = 150, Push = 12, Lift = 0.2 },
+	Sniper = { Name = "저격총", Cooldown = 2, Range = 400, Push = 45, Lift = 0.3 },
 	-- 로켓탄은 날아가는 탄이고, 터지면 Radius 안의 공을 바깥쪽으로 밀어낸다 (가까울수록 세게)
 	Rocket = { Name = "로켓탄", Cooldown = 4, Range = 200, Push = 60, Speed = 90, Radius = 14 },
 }
@@ -83,6 +89,53 @@ Config.BOT_TEAM_SIZE = 4
 Config.DASH_SPEED = 70
 Config.DASH_DURATION = 0.2
 Config.DASH_COOLDOWN = 3
+
+-- 전쟁 모드 ------------------------------------------------------------------
+-- 종목별 공 1개씩. 득점 방식(Goal):
+--   "pocket" = 당구처럼 경기장 구멍 6개 중 아무 데나 넣으면, 마지막으로 쏜 선수의 팀 득점
+--   "hoop"   = 양쪽 끝 벽 위의 농구 링에 위에서 넣으면 득점 (상대 쪽 링)
+--   "net"    = 공중 네트를 넘겨서 상대 진영 바닥에 떨어뜨리면 득점. 네트 밑으로 빠지면 마지막으로 쏜 팀 실점
+-- Push = 총에 맞았을 때 밀리는 배율, Up = 맞을 때마다 위로 더 띄우는 정도, Gravity = 중력 배율 (작을수록 천천히 떨어짐)
+Config.WAR_BALLS = {
+	{ Key = "Soccer", Name = "축구공", Goal = "pocket", Diameter = 4, Color = Color3.fromRGB(255, 255, 255), Gravity = 1, Push = 1, Up = 0.1 },
+	{ Key = "Football", Name = "미식축구공", Goal = "pocket", Diameter = 3.5, Stretch = 1.6, Color = Color3.fromRGB(130, 75, 40), Gravity = 1, Push = 1, Up = 0.15 },
+	{ Key = "Basketball", Name = "농구공", Goal = "hoop", Diameter = 3.5, Color = Color3.fromRGB(235, 120, 30), Gravity = 0.35, Push = 1, Up = 1 },
+	{ Key = "Volleyball", Name = "배구공", Goal = "net", Diameter = 7, Color = Color3.fromRGB(250, 235, 170), Gravity = 0.3, Push = 1.2, Up = 1 },
+	{ Key = "Shuttle", Name = "셔틀콕", Goal = "net", Shuttle = true, Gravity = Config.SHUTTLE_GRAVITY_SCALE, Push = 1.2, Up = 1 },
+}
+Config.WAR_FIELD_LENGTH = 140
+Config.WAR_FIELD_WIDTH = 90
+Config.WAR_BOT_TEAM_SIZE = 6
+Config.WAR_RESPAWN_DELAY = 2 -- 구멍·링에 들어간 공이 다시 나오기까지 (초)
+Config.NET_BOTTOM = 8 -- 공중 네트 아랫단 높이 (사람과 축구공은 밑으로 지나감)
+Config.POCKET_RADIUS = 5
+Config.HOOP_HEIGHT = 16
+Config.HOOP_RADIUS = 2.8
+
+Config.IS_WAR = Config.GAME_MODE == "War"
+if Config.IS_WAR then
+	Config.FIELD_LENGTH = Config.WAR_FIELD_LENGTH
+	Config.FIELD_WIDTH = Config.WAR_FIELD_WIDTH
+	Config.BOT_TEAM_SIZE = Config.WAR_BOT_TEAM_SIZE
+	Config.NET_HEIGHT = 20
+end
+
+-- 전쟁 모드 구멍 6개: 네 모서리 + 긴 벽 가운데 (당구대처럼)
+Config.POCKETS = {}
+do
+	local px, pz = Config.FIELD_LENGTH / 2 - 3, Config.FIELD_WIDTH / 2 - 3
+	for _, x in { -px, 0, px } do
+		for _, z in { -pz, pz } do
+			table.insert(Config.POCKETS, Vector3.new(x, 0, z))
+		end
+	end
+end
+
+-- 농구 링 중심: 양쪽 끝 벽 위. 키 = 그 링이 붙은 쪽 (-1 / 1)
+Config.HOOPS = {
+	[-1] = Vector3.new(-(Config.FIELD_LENGTH / 2 - 4), Config.HOOP_HEIGHT, 0),
+	[1] = Vector3.new(Config.FIELD_LENGTH / 2 - 4, Config.HOOP_HEIGHT, 0),
+}
 
 -- 팀. Side = 자기 골대(자기 진영)가 있는 X 방향 (-1 이면 x < 0 쪽)
 Config.Teams = {

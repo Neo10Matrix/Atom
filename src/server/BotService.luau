@@ -4,18 +4,23 @@
 --   2. 축구공을 드리블 중이면 상대 골대로 몰고 가서 가까워지면 슛
 --   3. 우리 팀이 갖지 않은 축구공은 가장 가까운 봇이 잡으러 감
 --   4. 나머지는 수비 위치로
+-- 전쟁 모드 봇: 공을 하나씩 나눠 맡아서, 공 뒤(목표 반대편)로 가서 목표 쪽으로 쏜다
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
 local PlayerService = require(script.Parent.PlayerService)
 local ShuttleService = require(script.Parent.ShuttleService)
+local WarService = require(script.Parent.WarService)
+local WeaponService = require(script.Parent.WeaponService)
 
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
 local THINK_INTERVAL = 0.1
 local SHOOT_DISTANCE = L * 0.3 -- 상대 골대와 이만큼 가까워지면 슛
 local HEAD_HEIGHT = 6 -- 셔틀콕을 받을 높이 (지면 기준)
+local WAR_STAND_DISTANCE = 14 -- 전쟁 모드: 공 뒤 이만큼 떨어진 곳에서 쏜다
+local WAR_FIRE_RANGE = 8 -- 서야 할 자리에 이만큼 가까우면 사격
 
 local BotService = {}
 
@@ -129,6 +134,57 @@ local function think(bot: Model, index: number)
 	humanoid:MoveTo(Vector3.new(side * L / 4, root.Position.Y, z))
 end
 
+-- 전쟁 모드: 이 공을 어디로 보내야 하나
+local function warGoalPoint(b: WarService.WarBall, key: string): Vector3
+	local side = sideOf(key)
+	local p = b.part.Position
+	if b.kind.Goal == "pocket" then
+		-- 가장 가까운 구멍
+		local best, bestDistance = Config.POCKETS[1], math.huge
+		for _, center in Config.POCKETS do
+			local d = (center - Vector3.new(p.X, 0, p.Z)).Magnitude
+			if d < bestDistance then
+				best, bestDistance = center, d
+			end
+		end
+		return best
+	elseif b.kind.Goal == "hoop" then
+		return Config.HOOPS[-side]
+	end
+	-- 네트 공: 네트 너머 상대 진영 위쪽으로
+	return Vector3.new(-side * L / 4, Config.NET_HEIGHT + 10, p.Z)
+end
+
+local function thinkWar(bot: Model, index: number)
+	local key = bot:GetAttribute("TeamKey") :: string
+	local humanoid = bot:FindFirstChildOfClass("Humanoid")
+	local root = rootOf(bot)
+	local active = WarService.getActive()
+	if not key or not humanoid or not root or #active == 0 then
+		return
+	end
+	-- 봇마다 공을 하나씩 나눠 맡는다
+	local b = active[(index - 1) % #active + 1]
+	local ballPosition = b.part.Position
+	local toGoal = warGoalPoint(b, key) - ballPosition
+	local flat = Vector3.new(toGoal.X, 0, toGoal.Z)
+	if flat.Magnitude < 1e-3 then
+		flat = Vector3.new(-sideOf(key), 0, 0)
+	end
+	local stand = ballPosition - flat.Unit * WAR_STAND_DISTANCE
+	stand = Vector3.new(math.clamp(stand.X, -L / 2 + 3, L / 2 - 3), root.Position.Y, math.clamp(stand.Z, -W / 2 + 3, W / 2 - 3))
+	humanoid:MoveTo(stand)
+	face(root, ballPosition - root.Position)
+
+	local offset = stand - root.Position
+	if Vector3.new(offset.X, 0, offset.Z).Magnitude < WAR_FIRE_RANGE then
+		-- 대부분 소총, 가끔 저격총·로켓탄 (쿨다운은 WeaponService 가 검사)
+		local roll = math.random()
+		local weapon = if roll < 0.01 then "Rocket" elseif roll < 0.04 then "Sniper" else "Rifle"
+		WeaponService.fire(bot, weapon, ballPosition)
+	end
+end
+
 -- 블록으로 만든 단순한 봇 (아바타 파일을 불러오지 않아서 게시 전 Studio 에서도 확실히 생성됨)
 local function buildBot(color: Color3): Model
 	local bot = Instance.new("Model")
@@ -213,7 +269,7 @@ function BotService.init()
 			if not PlayerService.isFrozen() then
 				for _, key in Config.TEAM_ORDER do
 					for index, bot in PlayerService.botsOf(key) do
-						local ok, err = pcall(think, bot, index)
+						local ok, err = pcall(if Config.IS_WAR then thinkWar else think, bot, index)
 						if not ok then
 							warn("봇 AI 오류:", err)
 						end

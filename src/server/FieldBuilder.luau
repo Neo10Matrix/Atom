@@ -1,12 +1,15 @@
 -- 경기장(잔디, 라인, 골대, 투명 벽, 스폰, 군대 장식)을 코드로 생성한다.
+-- 전쟁 모드에서는 축구 골대 대신 당구 구멍 6개와 양쪽 끝 벽 위의 농구 링을 만든다.
 -- Studio에서 따로 맵을 만들지 않아도 바로 플레이할 수 있다.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local CollisionGroups = require(script.Parent.CollisionGroups)
 
 local L = Config.FIELD_LENGTH
 local W = Config.FIELD_WIDTH
-local GW = Config.GOAL_WIDTH
+-- 전쟁 모드는 골대가 없으므로 끝 벽에 구멍을 뚫지 않는다
+local GW = if Config.IS_WAR then 0 else Config.GOAL_WIDTH
 local GH = Config.GOAL_HEIGHT
 local GD = Config.GOAL_DEPTH
 local WH = Config.WALL_HEIGHT
@@ -56,6 +59,9 @@ local function buildLines(parent: Instance)
 	end
 	line(parent, CFrame.new(0, 0, 0), 1.5, 1.5)
 
+	if Config.IS_WAR then
+		return
+	end
 	-- 페널티 박스
 	local boxDepth, boxWidth = Config.PENALTY_BOX_DEPTH, Config.PENALTY_BOX_WIDTH
 	for _, side in { -1, 1 } do
@@ -150,8 +156,10 @@ local function buildWalls(parent: Instance)
 		for _, zSign in { -1, 1 } do
 			wall(Vector3.new(2, WH, segLength), Vector3.new(x, WH / 2, zSign * (GW / 2 + segLength / 2)))
 		end
-		local aboveGoal = WH - GH - 1
-		wall(Vector3.new(2, aboveGoal, GW), Vector3.new(x, GH + 1 + aboveGoal / 2, 0))
+		if GW > 0 then
+			local aboveGoal = WH - GH - 1
+			wall(Vector3.new(2, aboveGoal, GW), Vector3.new(x, GH + 1 + aboveGoal / 2, 0))
+		end
 	end
 	-- 천장 (공이 경기장 밖으로 날아가지 않도록)
 	wall(Vector3.new(L + 4, 2, W + 4), Vector3.new(0, WH + 1, 0))
@@ -175,11 +183,79 @@ local function buildWalls(parent: Instance)
 	for _, zSign in { -1, 1 } do
 		glass(Vector3.new(L + 2, GH2, 0.5), Vector3.new(0, GH2 / 2, zSign * (W / 2 + 0.25)))
 	end
-	local glassSeg = W / 2 - GW / 2 - 1
 	for _, side in { -1, 1 } do
-		for _, zSign in { -1, 1 } do
-			glass(Vector3.new(0.5, GH2, glassSeg), Vector3.new(side * (L / 2 + 0.25), GH2 / 2, zSign * (GW / 2 + 1 + glassSeg / 2)))
+		if GW == 0 then
+			glass(Vector3.new(0.5, GH2, W + 1), Vector3.new(side * (L / 2 + 0.25), GH2 / 2, 0))
+		else
+			local glassSeg = W / 2 - GW / 2 - 1
+			for _, zSign in { -1, 1 } do
+				glass(Vector3.new(0.5, GH2, glassSeg), Vector3.new(side * (L / 2 + 0.25), GH2 / 2, zSign * (GW / 2 + 1 + glassSeg / 2)))
+			end
 		end
+	end
+end
+
+-- 전쟁 모드: 당구 구멍 6개 (바닥의 검은 원. 공이 이 안으로 굴러 들어가면 득점은 WarService 가 판정)
+local function buildPockets(parent: Instance)
+	local pockets = Instance.new("Folder")
+	pockets.Name = "Pockets"
+	pockets.Parent = parent
+	local r = Config.POCKET_RADIUS
+	for _, center in Config.POCKETS do
+		part(pockets, {
+			Name = "Pocket",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.1, r * 2, r * 2),
+			CFrame = CFrame.new(center + Vector3.new(0, 0.06, 0)) * CFrame.Angles(0, 0, math.pi / 2),
+			Color = Color3.fromRGB(15, 15, 15),
+			Material = Enum.Material.SmoothPlastic,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+		})
+		part(pockets, {
+			Name = "PocketRim",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.08, r * 2 + 1.2, r * 2 + 1.2),
+			CFrame = CFrame.new(center + Vector3.new(0, 0.04, 0)) * CFrame.Angles(0, 0, math.pi / 2),
+			Color = Color3.fromRGB(200, 170, 60),
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+		})
+	end
+end
+
+-- 전쟁 모드: 양쪽 끝 벽 위의 반투명 농구 링. 농구공만 부딪힌다 (선수·다른 공은 통과)
+local function buildHoop(parent: Instance, side: number, teamColor: BrickColor)
+	local hoop = Instance.new("Model")
+	hoop.Name = "Hoop"
+	hoop.Parent = parent
+	local center = Config.HOOPS[side]
+	local r = Config.HOOP_RADIUS
+	local hoopProps = {
+		Transparency = 0.5,
+		CanQuery = false,
+		CollisionGroup = CollisionGroups.Hoop,
+		Material = Enum.Material.SmoothPlastic,
+	}
+	local board = part(hoop, hoopProps)
+	board.Name = "Backboard"
+	board.Size = Vector3.new(0.4, 6, 10)
+	board.Position = Vector3.new(side * (L / 2 - 0.5), center.Y + 2.5, 0)
+	board.Color = Color3.new(1, 1, 1)
+	-- 링: 작은 조각을 원 모양으로 이어 붙인다
+	local segments = 14
+	local segLength = 2 * math.pi * r / segments + 0.15
+	for i = 1, segments do
+		local angle = (i / segments) * math.pi * 2
+		local p = part(hoop, hoopProps)
+		p.Name = "Rim"
+		p.Size = Vector3.new(0.3, 0.3, segLength)
+		p.CFrame = CFrame.new(center + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)) * CFrame.Angles(0, -angle, 0)
+		p.BrickColor = teamColor
+		p.Transparency = 0.2
 	end
 end
 
@@ -376,7 +452,14 @@ function FieldBuilder.build(): Folder
 	buildLines(field)
 	for _, key in Config.TEAM_ORDER do
 		local info = Config.Teams[key]
-		buildGoal(field, info.Side, info.Color)
+		if Config.IS_WAR then
+			buildHoop(field, info.Side, info.Color)
+		else
+			buildGoal(field, info.Side, info.Color)
+		end
+	end
+	if Config.IS_WAR then
+		buildPockets(field)
 	end
 	buildWalls(field)
 	buildSpawns(field)

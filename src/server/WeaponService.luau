@@ -11,6 +11,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local BallService = require(script.Parent.BallService)
 local PlayerService = require(script.Parent.PlayerService)
 local ShuttleService = require(script.Parent.ShuttleService)
+local WarService = require(script.Parent.WarService)
 
 type Actor = PlayerService.Actor
 
@@ -58,9 +59,11 @@ local function cast(origin: Vector3, offset: Vector3, exclude: { Instance }): Ra
 	return workspace:Raycast(origin, offset, params)
 end
 
--- 맞은 파트가 축구공이나 셔틀콕이면 궤적을 바꾼다
+-- 맞은 파트가 공이면 궤적을 바꾼다 (전쟁 모드 공 / 축구공 / 셔틀콕)
 local function hitBall(part: BasePart, impulse: Vector3, shooter: Actor)
-	if part.Name == "Ball" then
+	if part:GetAttribute("WarBall") then
+		WarService.push(part, impulse, shooter)
+	elseif part.Name == "Ball" then
 		BallService.push(part :: Part, impulse, shooter)
 	elseif part.Name == "Shuttle" then
 		ShuttleService.push(part, impulse)
@@ -92,8 +95,24 @@ local function shoot(shooter: Actor, key: string, origin: Vector3, direction: Ve
 	local hitPosition = if result then result.Position else origin + direction * weapon.Range
 	tracer(origin, hitPosition, TRACER_COLORS[key], if key == "Sniper" then 0.35 else 0.15)
 	if result then
-		hitBall(result.Instance, direction * weapon.Push, shooter)
+		local push = (direction + Vector3.new(0, weapon.Lift or 0, 0)).Unit * weapon.Push
+		hitBall(result.Instance, push, shooter)
 	end
+end
+
+-- 폭발·근접 신관이 노리는 모든 공
+local function allBalls(): { BasePart }
+	local targets: { BasePart } = {}
+	for _, ball in BallService.getBalls() do
+		table.insert(targets, ball)
+	end
+	for _, cork in ShuttleService.getActive() do
+		table.insert(targets, cork)
+	end
+	for _, part in WarService.getParts() do
+		table.insert(targets, part)
+	end
+	return targets
 end
 
 local function explode(rocket: Rocket, position: Vector3)
@@ -108,14 +127,7 @@ local function explode(rocket: Rocket, position: Vector3)
 	blast.DestroyJointRadiusPercent = 0
 	blast.Parent = effects
 
-	local targets: { BasePart } = {}
-	for _, ball in BallService.getBalls() do
-		table.insert(targets, ball)
-	end
-	for _, cork in ShuttleService.getActive() do
-		table.insert(targets, cork)
-	end
-	for _, part in targets do
+	for _, part in allBalls() do
 		local offset = part.Position - position
 		local distance = offset.Magnitude
 		if distance < weapon.Radius then
@@ -152,13 +164,8 @@ local function launch(shooter: Actor, origin: Vector3, direction: Vector3, exclu
 end
 
 local function nearBall(position: Vector3): boolean
-	for _, ball in BallService.getBalls() do
+	for _, ball in allBalls() do
 		if (ball.Position - position).Magnitude < ROCKET_FUSE + ball.Size.X / 2 then
-			return true
-		end
-	end
-	for _, cork in ShuttleService.getActive() do
-		if (cork.Position - position).Magnitude < ROCKET_FUSE + cork.Size.X / 2 then
 			return true
 		end
 	end

@@ -204,7 +204,9 @@ function HUD.init()
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n드리블 중 헤딩하면 공을 놓쳐요  |  Q: 돌격\n🔫 클릭: 사격 (공만 맞음)  |  1/2/3·R: 무기 바꾸기",
+		Text = if Config.IS_WAR
+			then "⚔️ 전쟁 모드: 공은 총으로만 움직여요\n⚽🏈 구멍에 넣기  |  🏀 상대 링에 넣기\n🏐🏸 네트 넘겨 상대 진영에 떨어뜨리기\n🔫 클릭: 사격  |  1/2/3·R: 무기  |  Q: 돌격"
+			else "⚽ 축구공: E 길게 눌렀다 떼서 킥\n🏸 셔틀콕: 점프해서 헤딩 (팀당 3번, 빨간색=마지막)\n드리블 중 헤딩하면 공을 놓쳐요  |  Q: 돌격\n🔫 클릭: 사격 (공만 맞음)  |  1/2/3·R: 무기 바꾸기",
 		Parent = panel,
 	})
 

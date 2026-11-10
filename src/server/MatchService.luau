@@ -1,5 +1,6 @@
 -- 경기 흐름: 대기 → 카운트다운 → 경기 → (축구 골 → 킥오프) → 종료
 -- 배드민턴 득점은 경기를 멈추지 않고 점수만 올린 뒤 다시 서브한다
+-- 전쟁 모드는 킥오프가 경기 시작 때 한 번뿐이고, 득점한 공만 다시 나온다
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -10,6 +11,7 @@ local BotService = require(script.Parent.BotService)
 local FieldBuilder = require(script.Parent.FieldBuilder)
 local PlayerService = require(script.Parent.PlayerService)
 local ShuttleService = require(script.Parent.ShuttleService)
+local WarService = require(script.Parent.WarService)
 
 local MatchService = {}
 
@@ -53,9 +55,13 @@ local function kickoff()
 	if not botsOk then
 		warn("[아미사커] 봇 생성 오류:", botError)
 	end
-	local count = ballCount()
-	BallService.reset(count)
-	ShuttleService.reset(count)
+	if Config.IS_WAR then
+		WarService.reset()
+	else
+		local count = ballCount()
+		BallService.reset(count)
+		ShuttleService.reset(count)
+	end
 	PlayerService.positionPlayers()
 	PlayerService.setFrozen(true)
 	setPhase("Countdown")
@@ -65,8 +71,12 @@ local function kickoff()
 	end
 	announce("작전 개시!", 1.5)
 	PlayerService.setFrozen(false)
-	BallService.release()
-	ShuttleService.release()
+	if Config.IS_WAR then
+		WarService.release()
+	else
+		BallService.release()
+		ShuttleService.release()
+	end
 	setPhase("Playing")
 end
 
@@ -106,6 +116,16 @@ local function handleShuttlePoint(event: ShuttleService.ShuttleEvent)
 	announce(string.format("배드민턴 득점! %s (%s)", Config.Teams[scoringKey].Name, reason), 2)
 end
 
+-- 전쟁 모드 득점 처리
+local function handleWarPoint(event: WarService.WarEvent)
+	addScore(event.scoringKey)
+	local scorer = event.scorer
+	if scorer and scorer.Parent and PlayerService.teamKeyOf(scorer) == event.scoringKey then
+		PlayerService.addPoint(scorer)
+	end
+	announce(event.text, 2)
+end
+
 local function playMatch()
 	for _, key in Config.TEAM_ORDER do
 		net:SetAttribute("Score" .. key, 0)
@@ -121,6 +141,13 @@ local function playMatch()
 		local dt = RunService.Heartbeat:Wait()
 		timeLeft -= dt
 		net:SetAttribute("TimeLeft", math.max(0, math.ceil(timeLeft)))
+
+		if Config.IS_WAR then
+			for _, event in WarService.step(dt) do
+				handleWarPoint(event)
+			end
+			continue
+		end
 
 		local needKickoff = false
 		for _, event in BallService.step() do
@@ -141,8 +168,12 @@ local function playMatch()
 		end
 	end
 
-	BallService.reset(ballCount())
-	ShuttleService.reset(ballCount())
+	if Config.IS_WAR then
+		WarService.reset()
+	else
+		BallService.reset(ballCount())
+		ShuttleService.reset(ballCount())
+	end
 	setPhase("Ended")
 	local alpha = net:GetAttribute("ScoreAlpha") or 0
 	local bravo = net:GetAttribute("ScoreBravo") or 0
